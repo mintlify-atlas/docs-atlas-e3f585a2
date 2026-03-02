@@ -157,7 +157,13 @@
               "cli/version",
               "cli/force-unlock",
               "cli/login",
-              "cli/logout"
+              "cli/logout",
+              "cli/metadata",
+              "cli/metadata-functions",
+              "cli/modules",
+              "cli/query",
+              "cli/state-identities",
+              "cli/stacks"
             ]
           }
         ]

@@ -1,0 +1,122 @@
+---
+title: terraform modules
+description: Show all declared modules in a working directory
+---
+
+## Synopsis
+
+Show all declared modules in a working directory
+
+## Usage
+
+```bash
+terraform [global options] modules [options]
+```
+
+## Description
+
+The `terraform modules` command prints out a list of all declared Terraform modules and their resolved versions in a Terraform working directory. This command analyzes the configuration to identify all module declarations and resolves their sources and versions from the module manifest.
+
+The command reads the root module configuration, traverses the module tree, and displays information about each module including its source, version constraints, and resolved version.
+
+## Prerequisites
+
+Before running this command, you must:
+
+1. Have a valid Terraform configuration in the working directory
+2. Run `terraform init` to install module dependencies
+
+If the root module is not found or modules are not installed, the command will fail with an error message instructing you to run `terraform init`.
+
+## Options
+
+<ParamField path="-json" type="boolean">
+  If specified, output declared Terraform modules and their resolved versions in a machine-readable JSON format instead of human-readable output.
+  
+  **Default:** `false`
+</ParamField>
+
+## Output Formats
+
+### Human-readable format (default)
+
+Displays modules in a tree-like structure with their sources and versions.
+
+### JSON format
+
+Provides structured JSON output containing detailed information about each module, including:
+- Module key/path
+- Source address
+- Version constraints
+- Resolved version
+- Module references
+
+## Exit Codes
+
+- **0** - Success
+- **1** - Errors occurred (e.g., configuration errors, uninstalled modules, core version requirement failures)
+
+## Examples
+
+### List modules in human-readable format
+
+```bash
+terraform modules
+```
+
+Example output:
+
+```
+Modules:
+- root
+- vpc
+  Source: terraform-aws-modules/vpc/aws
+  Version: 5.1.2
+- security_group
+  Source: terraform-aws-modules/security-group/aws
+  Version: 4.17.1
+```
+
+### List modules in JSON format
+
+```bash
+terraform modules -json
+```
+
+Example output:
+
+```json
+{
+  "modules": [
+    {
+      "key": "",
+      "source": ".",
+      "dir": "."
+    },
+    {
+      "key": "vpc",
+      "source": "terraform-aws-modules/vpc/aws",
+      "version": "5.1.2",
+      "dir": ".terraform/modules/vpc"
+    },
+    {
+      "key": "security_group",
+      "source": "terraform-aws-modules/security-group/aws",
+      "version": "4.17.1",
+      "dir": ".terraform/modules/security_group"
+    }
+  ]
+}
+```
+
+### Error when modules are not installed
+
+```bash
+terraform modules
+```
+
+If `terraform init` has not been run:
+
+```
+Error: root module not found. Please run terraform init
+```

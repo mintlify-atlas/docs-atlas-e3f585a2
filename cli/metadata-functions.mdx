@@ -1,0 +1,96 @@
+---
+title: terraform metadata functions
+description: Show signatures and descriptions for the available functions
+---
+
+## Synopsis
+
+Show signatures and descriptions for the available functions
+
+## Usage
+
+```bash
+terraform [global options] metadata functions -json
+```
+
+## Description
+
+The `terraform metadata functions` command prints out a JSON representation of the available function signatures in Terraform. This command provides information about all built-in functions available in the Terraform language, including their parameters, return types, and descriptions.
+
+This command is useful for tooling and IDE integrations that need to provide autocomplete, validation, or documentation for Terraform functions.
+
+## Options
+
+<ParamField path="-json" type="boolean" required>
+  Produce JSON output. This flag is **required** for the command to execute. The command will not run without this flag.
+  
+  **Default:** `false`
+</ParamField>
+
+## Output Format
+
+The command outputs a JSON object where each key is a function name and each value contains the function's signature information, including:
+
+- Parameter names and types
+- Return type
+- Variadic parameter information (if applicable)
+- Function description
+
+## Ignored Functions
+
+The following legacy functions are excluded from the output:
+- `map`
+- `list`
+- `core::map`
+- `core::list`
+
+## Exit Codes
+
+- **0** - Success
+- **1** - Error parsing command-line flags, missing required `-json` flag, or marshaling errors
+
+## Examples
+
+### Get all available functions in JSON format
+
+```bash
+terraform metadata functions -json
+```
+
+Example output (truncated):
+
+```json
+{
+  "abs": {
+    "description": "Returns the absolute value of a number",
+    "return_type": "number",
+    "parameters": [
+      {
+        "name": "num",
+        "type": "number"
+      }
+    ]
+  },
+  "concat": {
+    "description": "Combines two or more lists into a single list",
+    "return_type": "list",
+    "parameters": [],
+    "variadic_parameter": {
+      "name": "lists",
+      "type": "list"
+    }
+  }
+}
+```
+
+### Attempting to run without -json flag
+
+```bash
+terraform metadata functions
+```
+
+This will produce an error:
+
+```
+The `terraform metadata functions` command requires the `-json` flag.
+```

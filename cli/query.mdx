@@ -1,0 +1,137 @@
+---
+title: terraform query
+description: Search and list remote infrastructure with Terraform
+---
+
+## Synopsis
+
+Search and list remote infrastructure with Terraform
+
+## Usage
+
+```bash
+terraform [global options] query [options]
+```
+
+## Description
+
+The `terraform query` command queries remote infrastructure for resources. Terraform will search for `.tfquery.hcl` files within the current configuration directory. It then uses the configured providers to query the remote infrastructure for resources that match the defined list blocks. 
+
+The results are printed to the terminal and can optionally be used to generate Terraform configuration and import blocks for discovered resources.
+
+This command is particularly useful for:
+- Discovering existing infrastructure that is not yet managed by Terraform
+- Generating import configurations for existing resources
+- Auditing cloud resources
+- Finding resources that match specific criteria
+
+## Query Customization Options
+
+<ParamField path="-var" type="string">
+  Set a value for one of the input variables in the query file. Use the format `-var 'name=value'`. This option can be specified multiple times to set multiple variables.
+  
+  **Example:** `-var 'environment=production'`
+</ParamField>
+
+<ParamField path="-var-file" type="string">
+  Load variable values from the given file, in addition to the default files `terraform.tfvars` and `*.auto.tfvars`. This option can be specified multiple times to include multiple variable files.
+  
+  **Example:** `-var-file="prod.tfvars"`
+</ParamField>
+
+## Other Options
+
+<ParamField path="-generate-config-out" type="string">
+  Instructs Terraform to generate import and resource blocks for any found results. The configuration is written to a new file at the specified path, which must not already exist. 
+  
+  When this option is used with the `-json` flag, the generated configuration will be part of the JSON output instead of written to a file.
+  
+  **Example:** `-generate-config-out=generated.tf`
+</ParamField>
+
+<ParamField path="-json" type="boolean">
+  If specified, machine-readable output will be printed in JSON format instead of human-readable output.
+  
+  **Default:** `false`
+</ParamField>
+
+<ParamField path="-no-color" type="boolean">
+  If specified, output won't contain any color formatting.
+  
+  **Default:** `false`
+</ParamField>
+
+## Query Files
+
+Query files use the `.tfquery.hcl` extension and define the search criteria for remote resources. These files are automatically discovered in the current configuration directory when the query command runs.
+
+## Exit Codes
+
+- **0** - Success (operation completed successfully)
+- **1** - Error occurred (flag parsing errors, backend errors, configuration errors, or operation failures)
+- **Operation-specific exit codes** - The command returns the exit status from the backend operation
+
+## Examples
+
+### Basic query operation
+
+```bash
+terraform query
+```
+
+This searches for resources matching the criteria defined in `.tfquery.hcl` files and displays results in human-readable format.
+
+### Query with JSON output
+
+```bash
+terraform query -json
+```
+
+Outputs query results in machine-readable JSON format.
+
+### Query with configuration generation
+
+```bash
+terraform query -generate-config-out=discovered.tf
+```
+
+Searches for resources and generates Terraform configuration and import blocks in `discovered.tf`.
+
+### Query with variables
+
+```bash
+terraform query -var 'region=us-west-2' -var 'environment=prod'
+```
+
+Runs the query with custom variable values.
+
+### Query with variable file
+
+```bash
+terraform query -var-file="production.tfvars"
+```
+
+Loads variables from a file before running the query.
+
+### Query with JSON and config generation
+
+```bash
+terraform query -json -generate-config-out=output.tf
+```
+
+Outputs results in JSON format and includes the generated configuration in the JSON output (rather than writing to a separate file).
+
+### Query without color output
+
+```bash
+terraform query -no-color
+```
+
+Runs the query and displays results without color formatting, useful for logging or CI/CD environments.
+
+## Notes
+
+- The command sets parallelism to the default value (`DefaultParallelism`) internally
+- The `-chdir` global flag should be used to specify a working directory, not positional arguments
+- Actions cannot be specified during query operations (no `-target` flags)
+- The command respects provider development overrides and will show warnings when they are active

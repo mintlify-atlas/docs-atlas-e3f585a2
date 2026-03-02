@@ -1,0 +1,46 @@
+---
+title: terraform metadata
+description: Parent command for metadata-related operations
+---
+
+## Synopsis
+
+Metadata related commands
+
+## Usage
+
+```bash
+terraform [global options] metadata <subcommand> [options] [args]
+```
+
+## Description
+
+The `terraform metadata` command is a parent command that contains subcommands for metadata-related purposes. This command does not perform any operations itself and requires a subcommand to be specified.
+
+When run without a subcommand, it displays help information about available metadata subcommands.
+
+## Available Subcommands
+
+- `functions` - Show signatures and descriptions for the available functions
+
+## Exit Codes
+
+- **1** - Help requested or invalid usage (no subcommand specified)
+
+## Examples
+
+### Display available metadata subcommands
+
+```bash
+terraform metadata
+```
+
+This will display help information about the metadata command and its available subcommands.
+
+### Use a metadata subcommand
+
+```bash
+terraform metadata functions -json
+```
+
+This executes the `functions` subcommand to show available Terraform functions.

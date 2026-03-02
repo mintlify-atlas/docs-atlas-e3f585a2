@@ -1,0 +1,155 @@
+---
+title: terraform state identities
+description: List the identities of resources in the state
+---
+
+## Synopsis
+
+List the identities of resources in the state
+
+## Usage
+
+```bash
+terraform [global options] state identities [options] -json [address...]
+```
+
+## Description
+
+The `terraform state identities` command lists the JSON format of the identities of resources in the Terraform state. Resource identities provide additional metadata about resources beyond their standard attributes.
+
+This command outputs the identity information for resource instances in JSON format. You can optionally filter the results by providing resource or module addresses. If no addresses are provided, identities for all resource instances in the state are listed.
+
+## Positional Arguments
+
+- `address...` - Optional resource or module addresses to filter results. Multiple addresses can be specified.
+
+## Options
+
+<ParamField path="-json" type="boolean" required>
+  Produce JSON output. This flag is **required** for the command to execute.
+  
+  **Default:** `false`
+</ParamField>
+
+<ParamField path="-state" type="string">
+  Path to a Terraform state file to use to look up Terraform-managed resources. By default, Terraform will consult the state of the currently-selected workspace.
+  
+  **Example:** `-state=terraform.tfstate`
+</ParamField>
+
+<ParamField path="-id" type="string">
+  Filters the results to include only instances whose resource types have an attribute named "id" whose value equals the given id string.
+  
+  **Example:** `-id=i-1234567890abcdef0`
+</ParamField>
+
+## Address Formats
+
+The addresses must be either module addresses or absolute resource addresses:
+
+- `aws_instance.example` - A specific resource
+- `module.example` - All resources in a module
+- `module.example.module.child` - All resources in a nested module
+- `module.example.aws_instance.example` - A specific resource in a module
+
+## Behavior
+
+- If a resource exists but has no identity JSON, it will be skipped (identities are optional)
+- An error will be returned if any specified filter addresses do not exist in the state
+- If the state file is not found, an error is returned
+- This is a read-only command that does not modify state
+
+## Exit Codes
+
+- **0** - Success
+- **1** - Error occurred (missing `-json` flag, state loading errors, parsing errors, or invalid addresses)
+
+## Examples
+
+### List all resource identities
+
+```bash
+terraform state identities -json
+```
+
+Example output:
+
+```json
+{
+  "aws_instance.web": {
+    "instance_id": "i-1234567890abcdef0",
+    "availability_zone": "us-east-1a"
+  },
+  "aws_db_instance.database": {
+    "db_instance_identifier": "mydb-instance",
+    "region": "us-east-1"
+  }
+}
+```
+
+### List identities for a specific resource
+
+```bash
+terraform state identities -json aws_instance.web
+```
+
+Example output:
+
+```json
+{
+  "aws_instance.web": {
+    "instance_id": "i-1234567890abcdef0",
+    "availability_zone": "us-east-1a"
+  }
+}
+```
+
+### List identities for all resources in a module
+
+```bash
+terraform state identities -json module.vpc
+```
+
+This returns identities for all resources within the `vpc` module.
+
+### Filter by resource ID
+
+```bash
+terraform state identities -json -id=i-1234567890abcdef0
+```
+
+Returns only the identities of resources whose ID attribute matches the specified value.
+
+### Use a specific state file
+
+```bash
+terraform state identities -json -state=prod.tfstate
+```
+
+Reads identities from the `prod.tfstate` file instead of the current workspace state.
+
+### List identities for multiple resources
+
+```bash
+terraform state identities -json aws_instance.web aws_instance.app
+```
+
+Returns identities for both specified resources.
+
+### Error when -json flag is missing
+
+```bash
+terraform state identities
+```
+
+This produces an error:
+
+```
+The `terraform state identities` command requires the `-json` flag.
+```
+
+## Notes
+
+- This command ignores remote version conflicts since it is read-only
+- Empty output (`{}`) indicates no resources have identity information or no resources matched the filter criteria
+- Resource identities are provider-specific and may not be present for all resource types

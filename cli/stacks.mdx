@@ -1,0 +1,190 @@
+---
+title: terraform stacks
+description: Manage HCP Terraform stack operations
+---
+
+## Synopsis
+
+Manage HCP Terraform stack operations
+
+## Usage
+
+```bash
+terraform [global options] stacks [options] <subcommand> [args]
+```
+
+## Description
+
+The `terraform stacks` command interacts with HCP Terraform (formerly Terraform Cloud) for stack operations. This command delegates all execution to an internal plugin that manages the stack lifecycle.
+
+Stacks provide a way to manage collections of Terraform configurations as a single unit in HCP Terraform, enabling complex multi-environment and multi-configuration deployments.
+
+## How It Works
+
+The stacks command operates through a plugin architecture:
+
+1. **Plugin Discovery** - Discovers HCP Terraform service URLs via service discovery
+2. **Plugin Download** - Downloads the appropriate stacks plugin binary for your platform (or uses a cached version)
+3. **Plugin Execution** - Delegates all subcommand execution to the plugin via gRPC
+
+The plugin communicates with HCP Terraform APIs to perform stack operations.
+
+## Options
+
+<ParamField path="-plugin-cache-dir" type="string">
+  Specify a custom directory for caching the stacks plugin binary. By default, the plugin is cached in the Terraform CLI configuration directory under `stacksplugin/`.
+  
+  **Default:** `~/.terraform.d/stacksplugin` (or platform equivalent)
+</ParamField>
+
+## Configuration
+
+The stacks command is configured via environment variables:
+
+### Required Configuration
+
+While some commands may work without authentication, most operations require a token:
+
+<ParamField path="TF_STACKS_TOKEN" type="string">
+  Authentication token for HCP Terraform. If not provided, the command will attempt to read from the credentials file. Some commands like `stacks init` and `stacks validate` may work without a token.
+</ParamField>
+
+### Optional Configuration
+
+<ParamField path="TF_STACKS_HOSTNAME" type="string">
+  The hostname of the HCP Terraform instance to connect to.
+  
+  **Default:** `app.terraform.io`
+</ParamField>
+
+<ParamField path="TF_STACKS_ORGANIZATION_NAME" type="string">
+  The HCP Terraform organization name to use for operations.
+</ParamField>
+
+<ParamField path="TF_STACKS_PROJECT_NAME" type="string">
+  The HCP Terraform project name to use for operations.
+</ParamField>
+
+<ParamField path="TF_STACKS_STACK_NAME" type="string">
+  The stack name to use for operations.
+</ParamField>
+
+### Development Configuration
+
+<ParamField path="TF_STACKS_PLUGIN_DEV_OVERRIDE" type="string">
+  Path to a local stacks plugin binary for development. When set, this overrides the normal plugin download mechanism. A warning will be displayed when using this override.
+  
+  **Use only for plugin development.**
+</ParamField>
+
+## Plugin Management
+
+The stacks command automatically manages the plugin lifecycle:
+
+- **First Run** - Downloads the plugin from the HCP Terraform service
+- **Cached Runs** - Uses the cached plugin binary from subsequent runs
+- **Plugin Storage** - Plugins are stored in `~/.terraform.d/stacksplugin/` or the configured cache directory
+- **Custom Cache** - Use `-plugin-cache-dir` to override the default cache location
+- **Dev Override** - Use `TF_STACKS_PLUGIN_DEV_OVERRIDE` for local development
+
+## Service Discovery
+
+The command uses service discovery to locate:
+
+- **TFE API Service** (`tfe.v2`) - The main HCP Terraform API
+- **Stacks Plugin Service** (`stacksplugin.v1`) - The plugin download service
+
+If service discovery fails due to network issues, an error message will be displayed.
+
+## Exit Codes
+
+- **0** - Success
+- **1** - General error (configuration errors, flag parsing errors)
+- **98** - Plugin download or initialization error
+- **99** - RPC communication error with the plugin
+- **Subcommand-specific codes** - Exit codes from plugin subcommands
+
+## Examples
+
+### Display stacks help
+
+```bash
+terraform stacks
+```
+
+This displays help information and available subcommands from the plugin.
+
+### Run a stacks subcommand
+
+```bash
+terraform stacks plan
+```
+
+Executes the `plan` subcommand via the plugin.
+
+### Use custom plugin cache directory
+
+```bash
+terraform stacks -plugin-cache-dir=/custom/cache plan
+```
+
+Stores and retrieves the plugin from `/custom/cache/stacksplugin/`.
+
+### Configure via environment variables
+
+```bash
+export TF_STACKS_HOSTNAME="app.terraform.io"
+export TF_STACKS_TOKEN="your-token-here"
+export TF_STACKS_ORGANIZATION_NAME="my-org"
+export TF_STACKS_PROJECT_NAME="my-project"
+export TF_STACKS_STACK_NAME="my-stack"
+
+terraform stacks apply
+```
+
+### Use development plugin override
+
+```bash
+export TF_STACKS_PLUGIN_DEV_OVERRIDE="/path/to/local/plugin"
+terraform stacks validate
+```
+
+Warning displayed:
+
+```
+Warning: Stacks plugin development overrides are in effect
+
+Instead of using the current released version, Terraform is loading the
+stacks plugin from the following location:
+
+ - /path/to/local/plugin
+
+Overriding the stacks plugin location can cause unexpected behavior, and is
+only intended for use when developing new versions of the plugin.
+```
+
+## Prerequisites
+
+- **Cloud Backend** - The stacks command requires HCP Terraform connectivity
+- **Service Discovery** - Must be able to reach the HCP Terraform hostname for service discovery
+- **Authentication** - Most operations require a valid HCP Terraform token
+
+## Subcommands
+
+The available subcommands are provided by the stacks plugin. Run `terraform stacks` without arguments to see the full list of available subcommands and their documentation.
+
+Common subcommands typically include:
+- `init` - Initialize a stack
+- `plan` - Preview stack changes
+- `apply` - Apply stack changes
+- `validate` - Validate stack configuration
+- `destroy` - Destroy stack resources
+
+## Notes
+
+- The plugin handshake uses protocol version 1 by default
+- Plugin binaries are platform-specific (OS and architecture)
+- The command respects the global `-chdir` flag for working directory
+- Plugin logs are available via Terraform's logging mechanisms
+- Network connectivity to HCP Terraform is required for most operations
+- The credentials file follows standard HCP Terraform authentication patterns
