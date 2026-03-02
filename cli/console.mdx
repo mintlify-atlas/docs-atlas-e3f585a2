@@ -1,0 +1,49 @@
+---
+title: terraform console
+description: The terraform console command provides an interactive console for evaluating expressions against the current Terraform state.
+---
+
+# Command: console
+
+The `terraform console` command provides an interactive console for evaluating [expressions](/terraform/language/expressions).
+
+## Usage
+
+```bash
+terraform console [options]
+```
+
+This command provides an interactive command-line console for evaluating and experimenting with [expressions](/terraform/language/expressions). You can use it to test interpolations before using them in configurations and to interact with any values currently saved in [state](/terraform/language/state). If the current state is empty or has not yet been created, you can still use the console to experiment with the expression syntax and [built-in functions](/terraform/language/functions).
+
+The console holds a [lock on the state](/terraform/language/state/locking), and you will not be able to use the console while other commands are running with the state.
+
+## Options
+
+- `-state=path` - Path to a Terraform state file to use to look up Terraform-managed resources. By default, Terraform will consult the state of the currently-selected workspace as usual. **Legacy option for the local backend only.** See the [local backend documentation](/terraform/language/settings/backends/local) for more information.
+
+- `-plan` - Create a new plan (as if running `terraform plan`) and then evaluate expressions against its planned state instead of evaluating against the current state. You can use this to inspect the effects of configuration changes that haven't been applied yet.
+
+- `-var 'NAME=VALUE'` - Sets a value for a single [input variable](/terraform/language/values/variables) declared in the root module of the configuration. Use this option multiple times to set more than one variable. Refer to [Input Variables on the Command Line](/terraform/cli/commands/plan#input-variables-on-the-command-line) for more information.
+
+- `-var-file=FILENAME` - Sets values for potentially many [input variables](/terraform/language/values/variables) declared in the root module of the configuration, using definitions from a ["tfvars" file](/terraform/language/values/variables#variable-definitions-tfvars-files). Use this option multiple times to include values from more than one file.
+
+There are several other ways to set values for input variables in the root module, aside from the `-var` and `-var-file` options. Refer to [Assigning Values to Root Module Variables](/terraform/cli/commands/plan#assigning-values-to-root-module-variables) for more information.
+
+## Scripting
+
+The `terraform console` command can be used in non-interactive scripts by piping newline-separated commands to it. Only the output from the final command is printed unless an error occurs earlier.
+
+For example:
+
+```bash
+$ echo 'split(",", "foo,bar,baz")' | terraform console
+tolist([
+  "foo",
+  "bar",
+  "baz",
+])
+```
+
+## Console-Only Functions
+
+The `terraform console` command provides access to additional functions that are only available in the console, not in normal Terraform configurations. These functions are intended for debugging and experimentation.

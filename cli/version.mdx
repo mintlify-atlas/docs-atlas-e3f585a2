@@ -1,0 +1,71 @@
+---
+title: terraform version
+description: The terraform version command displays the Terraform version and the versions of all installed provider plugins.
+---
+
+# Command: version
+
+The `terraform version` command displays the version of Terraform and all installed plugins.
+
+## Usage
+
+```bash
+terraform version [options]
+```
+
+## Options
+
+- `-json` - Output the version information as a JSON object.
+
+## Example Output
+
+Human-readable format:
+
+```bash
+$ terraform version
+Terraform v1.7.0
+on darwin_amd64
++ provider registry.terraform.io/hashicorp/aws v5.31.0
++ provider registry.terraform.io/hashicorp/random v3.6.0
+```
+
+JSON format:
+
+```bash
+$ terraform version -json
+{
+  "terraform_version": "1.7.0",
+  "platform": "darwin_amd64",
+  "provider_selections": {
+    "registry.terraform.io/hashicorp/aws": "5.31.0",
+    "registry.terraform.io/hashicorp/random": "3.6.0"
+  },
+  "terraform_outdated": false
+}
+```
+
+## Version Checking
+
+If version checking is enabled, Terraform will also check if a newer version is available and display a message if an update is available:
+
+```bash
+$ terraform version
+Terraform v1.6.0
+on darwin_amd64
++ provider registry.terraform.io/hashicorp/aws v5.31.0
+
+Your version of Terraform is out of date! The latest version
+is 1.7.0. You can update by downloading from https://developer.hashicorp.com/terraform/install
+```
+
+## Provider Versions
+
+The version command displays the versions of all installed provider plugins based on the dependency lock file (`.terraform.lock.hcl`). If you haven't successfully run `terraform init` since the most recent change to dependencies, the provider version information may be empty or incomplete.
+
+## Global Version Flags
+
+The following flags are also recognized as version flags and will trigger the version command:
+
+- `-v`
+- `-version`
+- `--version`

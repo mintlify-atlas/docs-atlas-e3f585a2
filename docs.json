@@ -1,122 +1,244 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Terraform",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#844FBA",
+    "light": "#B47FDB",
+    "dark": "#5C35A3"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/hashicorp/terraform"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/hashicorp/terraform"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/overview",
+              "concepts/infrastructure-as-code",
+              "concepts/execution-plans",
+              "concepts/resource-graph",
+              "concepts/state-management"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Configuration Language",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "language/overview",
+              "language/syntax",
+              "language/resources",
+              "language/providers",
+              "language/variables",
+              "language/outputs",
+              "language/modules",
+              "language/expressions",
+              "language/functions"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Workflow",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "workflow/initialize",
+              "workflow/plan",
+              "workflow/apply",
+              "workflow/destroy",
+              "workflow/workspaces"
+            ]
+          },
+          {
+            "group": "State Management",
+            "pages": [
+              "state/overview",
+              "state/backends",
+              "state/remote-state",
+              "state/locking",
+              "state/import",
+              "state/manipulation"
+            ]
+          },
+          {
+            "group": "Providers",
+            "pages": [
+              "providers/overview",
+              "providers/configuration",
+              "providers/installation",
+              "providers/development"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/stacks",
+              "advanced/testing",
+              "advanced/cloud-integration",
+              "advanced/debugging"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "CLI Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Commands",
             "pages": [
-              "api-reference/introduction"
+              "cli/init",
+              "cli/validate",
+              "cli/plan",
+              "cli/apply",
+              "cli/destroy"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "State Commands",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "cli/state-list",
+              "cli/state-show",
+              "cli/state-mv",
+              "cli/state-rm",
+              "cli/state-pull",
+              "cli/state-push",
+              "cli/state-replace-provider"
+            ]
+          },
+          {
+            "group": "Workspace Commands",
+            "pages": [
+              "cli/workspace-list",
+              "cli/workspace-select",
+              "cli/workspace-new",
+              "cli/workspace-delete",
+              "cli/workspace-show"
+            ]
+          },
+          {
+            "group": "Provider Commands",
+            "pages": [
+              "cli/providers",
+              "cli/providers-lock",
+              "cli/providers-mirror",
+              "cli/providers-schema"
+            ]
+          },
+          {
+            "group": "Other Commands",
+            "pages": [
+              "cli/console",
+              "cli/fmt",
+              "cli/get",
+              "cli/graph",
+              "cli/import",
+              "cli/output",
+              "cli/refresh",
+              "cli/show",
+              "cli/taint",
+              "cli/untaint",
+              "cli/test",
+              "cli/version",
+              "cli/force-unlock",
+              "cli/login",
+              "cli/logout"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Backends",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "backends/overview",
+              "backends/configuration"
+            ]
+          },
+          {
+            "group": "Remote State Backends",
+            "pages": [
+              "backends/s3",
+              "backends/azure",
+              "backends/gcs",
+              "backends/consul",
+              "backends/kubernetes",
+              "backends/http",
+              "backends/postgres",
+              "backends/oss",
+              "backends/cos",
+              "backends/oci"
+            ]
+          },
+          {
+            "group": "Local Backend",
+            "pages": [
+              "backends/local"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Architecture",
+        "groups": [
+          {
+            "group": "Core Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/modules-runtime",
+              "architecture/stacks-runtime",
+              "architecture/plugin-protocol"
+            ]
+          },
+          {
+            "group": "Internals",
+            "pages": [
+              "architecture/resource-lifecycle",
+              "architecture/graph-evaluation",
+              "architecture/dependency-resolution"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Contributing",
+        "groups": [
+          {
+            "group": "Development",
+            "pages": [
+              "contributing/overview",
+              "contributing/building",
+              "contributing/testing",
+              "contributing/debugging"
+            ]
+          },
+          {
+            "group": "Guidelines",
+            "pages": [
+              "contributing/code-style",
+              "contributing/bug-reports",
+              "contributing/pull-requests"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

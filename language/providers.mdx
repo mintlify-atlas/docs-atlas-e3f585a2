@@ -1,0 +1,466 @@
+---
+title: Providers
+description: Configure and use providers to interact with cloud platforms and services in Terraform.
+---
+
+# Providers
+
+Providers are plugins that enable Terraform to interact with cloud platforms, SaaS providers, and other APIs. Each provider adds a set of resource types and data sources that Terraform can manage.
+
+## Provider Configuration
+
+Provider blocks configure the named provider:
+
+```hcl
+provider "<PROVIDER_NAME>" {
+  # Configuration options
+}
+```
+
+### Example
+
+```hcl
+provider "aws" {
+  region = "us-west-2"
+  
+  default_tags {
+    tags = {
+      Environment = "production"
+      ManagedBy   = "Terraform"
+    }
+  }
+}
+```
+
+## Provider Requirements
+
+Declare required providers in a `terraform` block:
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
+  }
+}
+```
+
+### Source Addresses
+
+Provider source addresses have the format:
+
+```
+<HOSTNAME>/<NAMESPACE>/<TYPE>
+```
+
+Examples:
+- `hashicorp/aws` - Official AWS provider
+- `terraform-providers/azurerm` - Azure provider
+- `example.com/custom/provider` - Third-party provider
+
+<Note>
+The hostname defaults to `registry.terraform.io` if omitted.
+</Note>
+
+### Version Constraints
+
+Specify acceptable provider versions:
+
+```hcl
+version = "~> 5.0"      # >= 5.0, < 6.0
+version = ">= 5.0"      # 5.0 or higher
+version = ">= 5.0, < 6.0" # Between 5.0 and 6.0
+version = "= 5.1.0"     # Exactly 5.1.0
+```
+
+## Multiple Provider Configurations
+
+Use aliases for multiple configurations of the same provider:
+
+```hcl
+provider "aws" {
+  region = "us-west-2"
+}
+
+provider "aws" {
+  alias  = "east"
+  region = "us-east-1"
+}
+
+provider "aws" {
+  alias  = "europe"
+  region = "eu-west-1"
+}
+```
+
+### Using Aliased Providers
+
+Reference aliased providers in resources:
+
+```hcl
+resource "aws_instance" "west" {
+  provider = aws
+  
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+}
+
+resource "aws_instance" "east" {
+  provider = aws.east
+  
+  ami           = "ami-87654321"
+  instance_type = "t2.micro"
+}
+```
+
+## Provider Configuration Reference
+
+Resources can reference provider configurations:
+
+```hcl
+variable "aws_region" {
+  type = string
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+```
+
+<Warning>
+Provider configurations cannot use resource outputs. Providers are configured before resources are created.
+</Warning>
+
+## Default Provider Configuration
+
+Terraform uses the default (unaliased) provider configuration when:
+- No `provider` argument is specified in a resource
+- The resource type matches the provider name
+
+```hcl
+provider "aws" {
+  region = "us-west-2"
+}
+
+# Uses the default aws provider
+resource "aws_instance" "web" {
+  ami = "ami-12345678"
+}
+```
+
+## Provider Configuration in Modules
+
+Modules can declare which provider configurations they accept:
+
+### Child Module
+
+```hcl
+# modules/web-app/main.tf
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+    }
+  }
+}
+
+resource "aws_instance" "app" {
+  ami = var.ami_id
+}
+```
+
+### Root Module
+
+```hcl
+provider "aws" {
+  region = "us-west-2"
+}
+
+provider "aws" {
+  alias  = "east"
+  region = "us-east-1"
+}
+
+module "web_app_west" {
+  source = "./modules/web-app"
+  
+  providers = {
+    aws = aws
+  }
+}
+
+module "web_app_east" {
+  source = "./modules/web-app"
+  
+  providers = {
+    aws = aws.east
+  }
+}
+```
+
+## Provider Metadata
+
+Access provider metadata in resources:
+
+```hcl
+resource "aws_instance" "web" {
+  ami = "ami-12345678"
+  
+  tags = {
+    Provider = "aws"
+  }
+}
+```
+
+## Provider Functions
+
+Some providers offer built-in functions:
+
+```hcl
+# Using a provider-contributed function
+locals {
+  encoded = provider::aws::encode_secret(var.password)
+}
+```
+
+<Note>
+Provider functions are namespaced under `provider::<PROVIDER>::<FUNCTION>`.
+</Note>
+
+## Provider Configuration Files
+
+Organize provider configurations:
+
+```hcl
+# providers.tf
+provider "aws" {
+  region = var.aws_region
+}
+
+provider "random" {}
+
+provider "tls" {}
+```
+
+## Authentication
+
+Providers support various authentication methods:
+
+### Static Credentials
+
+```hcl
+provider "aws" {
+  access_key = "AKIAIOSFODNN7EXAMPLE"
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  region     = "us-west-2"
+}
+```
+
+<Warning>
+Never commit credentials to version control. Use environment variables or credential files instead.
+</Warning>
+
+### Environment Variables
+
+```bash
+export AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+export AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+export AWS_DEFAULT_REGION="us-west-2"
+```
+
+```hcl
+provider "aws" {
+  # Credentials from environment variables
+}
+```
+
+### Credential Files
+
+```hcl
+provider "aws" {
+  shared_credentials_files = ["~/.aws/credentials"]
+  profile                  = "production"
+}
+```
+
+## Provider Validation
+
+Providers validate their configuration during `terraform init`:
+
+```bash
+terraform init
+```
+
+Common validation errors:
+- Invalid region names
+- Missing required configuration
+- Unsupported provider versions
+
+## Provider Development
+
+The provider implementation defines:
+
+- Resource types
+- Data source types  
+- Configuration schema
+- Authentication logic
+
+From the source code (internal/configs/provider.go:20-52):
+
+```go
+type Provider struct {
+    Name       string
+    NameRange  hcl.Range
+    Alias      string
+    AliasRange *hcl.Range
+    
+    Version VersionConstraint
+    Config  hcl.Body
+    
+    DeclRange hcl.Range
+}
+```
+
+## Provider Naming
+
+Provider names must be normalized and valid:
+
+```hcl
+provider "aws" { }        # Valid
+provider "aws-custom" { } # Valid
+provider "AWS" { }        # Invalid - must be lowercase
+provider "2nd-aws" { }    # Invalid - cannot start with digit
+```
+
+<Note>
+From internal/configs/provider.go:286-312, provider names are validated to ensure they conform to the naming standards.
+</Note>
+
+## Deprecated Provider Version Constraints
+
+<Warning>
+Provider version constraints inside provider blocks are deprecated. Use `required_providers` instead:
+
+**Deprecated:**
+```hcl
+provider "aws" {
+  version = "~> 5.0"
+}
+```
+
+**Recommended:**
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+```
+</Warning>
+
+## Provider Installation
+
+Terraform downloads providers during initialization:
+
+```bash
+terraform init
+```
+
+Providers are installed to:
+- `.terraform/providers/` (local cache)
+- `~/.terraform.d/plugins/` (global cache)
+
+## Provider Mirroring
+
+Use a local mirror for air-gapped environments:
+
+```hcl
+provider_installation {
+  filesystem_mirror {
+    path    = "/usr/local/share/terraform/providers"
+    include = ["example.com/*/*"]
+  }
+  
+  direct {
+    exclude = ["example.com/*/*"]
+  }
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Pin Versions" icon="lock">
+    Always specify provider version constraints to ensure consistent behavior.
+  </Card>
+  
+  <Card title="Separate Files" icon="file">
+    Keep provider configurations in `providers.tf` for clarity.
+  </Card>
+  
+  <Card title="Use Variables" icon="input-text">
+    Parameterize provider configurations for flexibility across environments.
+  </Card>
+  
+  <Card title="Secure Credentials" icon="shield">
+    Never hardcode credentials. Use environment variables or credential files.
+  </Card>
+</CardGroup>
+
+## Common Provider Blocks
+
+### AWS
+
+```hcl
+provider "aws" {
+  region  = "us-west-2"
+  profile = "production"
+  
+  assume_role {
+    role_arn = "arn:aws:iam::123456789012:role/TerraformRole"
+  }
+}
+```
+
+### Azure
+
+```hcl
+provider "azurerm" {
+  features {}
+  
+  subscription_id = var.subscription_id
+  tenant_id       = var.tenant_id
+}
+```
+
+### Google Cloud
+
+```hcl
+provider "google" {
+  project = var.project_id
+  region  = "us-central1"
+  zone    = "us-central1-a"
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Resources" href="/language/resources" icon="server">
+    Use providers to create resources
+  </Card>
+  
+  <Card title="Modules" href="/language/modules" icon="cube">
+    Pass providers to child modules
+  </Card>
+</CardGroup>

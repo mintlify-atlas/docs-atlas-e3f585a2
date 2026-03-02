@@ -1,0 +1,547 @@
+---
+title: Cloud Integration
+description: Learn how to integrate Terraform with HCP Terraform and Terraform Enterprise for remote operations, state management, and collaboration.
+---
+
+# HCP Terraform & Terraform Enterprise Integration
+
+Terraform's cloud backend provides seamless integration with HCP Terraform (formerly Terraform Cloud) and Terraform Enterprise for remote state storage, execution, and team collaboration.
+
+## Overview
+
+The cloud integration enables:
+
+- **Remote state management**: Store state securely in HCP Terraform
+- **Remote execution**: Run Terraform operations in HCP Terraform's infrastructure
+- **Team collaboration**: Share workspaces and coordinate changes
+- **Policy enforcement**: Apply Sentinel policies and OPA checks
+- **VCS integration**: Trigger runs from version control systems
+- **Cost estimation**: Preview infrastructure costs before applying
+
+## Configuration
+
+### Basic Cloud Block
+
+```hcl
+terraform {
+  cloud {
+    organization = "my-organization"
+    
+    workspaces {
+      name = "my-workspace"
+    }
+  }
+}
+```
+
+### Configuration Options
+
+From `internal/cloud/backend.go:135-180`:
+
+```hcl
+terraform {
+  cloud {
+    # Hostname of HCP Terraform or Terraform Enterprise
+    hostname = "app.terraform.io"  # default
+    
+    # Organization containing target workspaces
+    organization = "my-org"
+    
+    # Optional: API token for authentication
+    token = "<token>"  # Better to use credentials file
+    
+    workspaces {
+      # Option 1: Single workspace by name
+      name = "production"
+      
+      # Option 2: Multiple workspaces by tags
+      tags = ["web", "production"]
+      
+      # Option 3: Key-value tags
+      tags = {
+        environment = "production"
+        tier        = "web"
+      }
+      
+      # Optional: Project for workspace organization
+      project = "infrastructure"
+    }
+  }
+}
+```
+
+## Workspace Strategies
+
+The cloud backend supports three workspace selection strategies:
+
+### 1. Single Workspace (Name Strategy)
+
+```hcl
+workspaces {
+  name = "production"
+}
+```
+
+Implementation:
+
+```go
+case WorkspaceNameStrategy:
+    names = append(names, b.WorkspaceMapping.Name)
+    return names, diags
+```
+
+Location: `internal/cloud/backend.go:630-632`
+
+### 2. Tag-Based Selection (Tags Strategy)
+
+```hcl
+workspaces {
+  tags = ["web", "app", "production"]
+}
+```
+
+Queries workspaces matching all specified tags:
+
+```go
+if b.WorkspaceMapping.Strategy() == WorkspaceTagsStrategy {
+    options.Tags = strings.Join(b.WorkspaceMapping.TagsAsSet, ",")
+}
+```
+
+Location: `internal/cloud/backend.go:638-639`
+
+### 3. Key-Value Tags (KV Tags Strategy)
+
+```hcl
+workspaces {
+  tags = {
+    environment = "production"
+    region      = "us-west-2"
+  }
+}
+```
+
+Matches workspaces with specific tag key-value pairs:
+
+```go
+if b.WorkspaceMapping.Strategy() == WorkspaceKVTagsStrategy {
+    options.TagBindings = b.WorkspaceMapping.asTFETagBindings()
+}
+```
+
+Location: `internal/cloud/backend.go:640-650`
+
+## Authentication
+
+### Environment Variables
+
+Configuration values can be set via environment variables:
+
+```bash
+# Organization (required if not in config)
+export TF_CLOUD_ORGANIZATION="my-org"
+
+# Hostname (optional, defaults to app.terraform.io)
+export TF_CLOUD_HOSTNAME="terraform.example.com"
+
+# Project (optional)
+export TF_CLOUD_PROJECT="infrastructure"
+```
+
+From `internal/cloud/backend.go:453-595`:
+
+```go
+func resolveCloudConfig(obj cty.Value) (cloudConfig, tfdiags.Diagnostics) {
+    // Config beats environment, environment beats defaults
+    if val := obj.GetAttr("hostname"); !val.IsNull() && val.AsString() != "" {
+        ret.hostname = val.AsString()
+    } else {
+        ret.hostname = os.Getenv("TF_CLOUD_HOSTNAME")
+    }
+    if ret.hostname == "" {
+        ret.hostname = defaultHostname  // app.terraform.io
+    }
+}
+```
+
+### CLI Credentials
+
+Authenticate using `terraform login`:
+
+```bash
+# Login to default hostname (app.terraform.io)
+terraform login
+
+# Login to custom hostname
+terraform login terraform.example.com
+```
+
+Credentials are stored in CLI configuration:
+
+```go
+token, err := CliConfigToken(hostname, b.services)
+if err != nil {
+    return diags.Append(tfdiags.AttributeValue(
+        tfdiags.Error,
+        strings.ToUpper(err.Error()[:1])+err.Error()[1:],
+        "",
+        cty.Path{cty.GetAttrStep{Name: "hostname"}},
+    ))
+}
+```
+
+Location: `internal/cloud/backend.go:296-309`
+
+## Service Discovery
+
+The cloud backend uses service discovery to locate the TFE API:
+
+```go
+hostname, err := svchost.ForComparison(b.Hostname)
+if err == nil {
+    host, err = b.services.Discover(hostname)
+    
+    if err == nil {
+        b.ServicesHost = host
+        tfcService, err = host.ServiceURL(tfeServiceID)  // "tfe.v2"
+    }
+}
+```
+
+Location: `internal/cloud/backend.go:263-279`
+
+## Remote Operations
+
+The cloud backend determines when to run operations remotely vs. locally:
+
+```go
+func (b *Cloud) Operation(ctx context.Context, op *backendrun.Operation) (*backendrun.RunningOperation, error) {
+    // Retrieve workspace
+    w, err := b.fetchWorkspace(ctx, b.Organization, op.Workspace)
+    
+    // Check if we need local execution
+    if b.forceLocal || isLocalExecutionMode(w.ExecutionMode) {
+        b.forceLocal = true
+        return b.local.Operation(ctx, op)
+    }
+    
+    // Run remotely
+    switch op.Type {
+    case backendrun.OperationTypePlan:
+        f = b.opPlan
+    case backendrun.OperationTypeApply:
+        f = b.opApply
+    }
+}
+```
+
+Location: `internal/cloud/backend.go:881-934`
+
+### Local vs Remote Execution
+
+Execution mode is determined by:
+
+1. **Force local flag**: `TF_FORCE_LOCAL_BACKEND` environment variable
+2. **Workspace settings**: Workspace execution mode configuration
+3. **Operations entitlement**: Organization's operations capability
+
+```go
+// Configure local backend fallback
+b.local = backendLocal.NewWithBackend(b)
+
+// Determine if forced to use local backend
+b.forceLocal = os.Getenv("TF_FORCE_LOCAL_BACKEND") != "" || !entitlements.Operations
+```
+
+Location: `internal/cloud/backend.go:428-431`
+
+## Remote Plan Execution
+
+When running `terraform plan` with cloud backend:
+
+### Plan Options
+
+```go
+type Cloud struct {
+    // CLI and Colorize control CLI output
+    CLI      cli.Ui
+    CLIColor *colorstring.Colorize
+    
+    // ContextOpts are base context options
+    ContextOpts *terraform.ContextOpts
+    
+    // client is the HCP Terraform or Terraform Enterprise API client
+    client *tfe.Client
+    
+    // Organization contains target workspaces
+    Organization string
+    
+    // WorkspaceMapping contains workspace selection strategies
+    WorkspaceMapping WorkspaceMapping
+}
+```
+
+Location: `internal/cloud/backend.go:55-84`
+
+### Configuration Upload
+
+```go
+configOptions := tfe.ConfigurationVersionCreateOptions{
+    AutoQueueRuns: tfe.Bool(false),
+    Speculative:   tfe.Bool(planOnly),    // true for plan without -out
+    Provisional:   tfe.Bool(provisional),  // true for plan with -out
+}
+
+cv, err := b.uploadConfigurationVersion(stopCtx, cancelCtx, op, w, configOptions)
+```
+
+Location: `internal/cloud/backend_plan.go:132-141`
+
+### Run Creation
+
+```go
+runOptions := tfe.RunCreateOptions{
+    ConfigurationVersion: cv,
+    Refresh:              tfe.Bool(op.PlanRefresh),
+    Workspace:            w,
+    AutoApply:            tfe.Bool(op.AutoApprove),
+    SavePlan:             tfe.Bool(op.PlanOutPath != ""),
+}
+```
+
+Location: `internal/cloud/backend_plan.go:143-149`
+
+## Version Compatibility
+
+The cloud backend verifies Terraform version compatibility:
+
+```go
+// Check minimum API version
+currentAPIVersion, parseErr := version.NewVersion(b.client.RemoteAPIVersion())
+desiredAPIVersion, _ := version.NewVersion("2.5")
+
+if parseErr != nil || currentAPIVersion.LessThan(desiredAPIVersion) {
+    diags = diags.Append(tfdiags.Sourceless(
+        tfdiags.Error,
+        "Unsupported Terraform Enterprise version",
+        `The 'cloud' option is not supported with this version of Terraform Enterprise.`,
+    ))
+}
+```
+
+Location: `internal/cloud/backend.go:396-425`
+
+### Workspace Terraform Version
+
+```go
+func (b *Cloud) VerifyWorkspaceTerraformVersion(workspaceName string) tfdiags.Diagnostics {
+    workspace, err := b.getRemoteWorkspace(context.Background(), workspaceName)
+    
+    // Skip check for "latest" pseudo-version
+    if workspace.TerraformVersion == "latest" {
+        return nil
+    }
+    
+    // Skip check for local execution mode
+    if isLocalExecutionMode(workspace.ExecutionMode) {
+        return nil
+    }
+    
+    // Verify version compatibility
+    remoteConstraint, err := version.NewConstraint(workspace.TerraformVersion)
+    if !remoteConstraint.Check(fullTfversion) {
+        // Return error or warning based on ignoreVersionConflict
+    }
+}
+```
+
+Location: `internal/cloud/backend.go:1065-1162`
+
+## Workspace Management
+
+### Auto-Creation
+
+Workspaces are created automatically if they don't exist:
+
+```go
+if err == tfe.ErrResourceNotFound {
+    workspaceCreateOptions := tfe.WorkspaceCreateOptions{
+        Name:    tfe.String(name),
+        Project: configuredProject,
+    }
+    
+    if b.WorkspaceMapping.Strategy() == WorkspaceTagsStrategy {
+        workspaceCreateOptions.Tags = b.WorkspaceMapping.tfeTags()
+    } else if b.WorkspaceMapping.Strategy() == WorkspaceKVTagsStrategy {
+        workspaceCreateOptions.TagBindings = b.WorkspaceMapping.asTFETagBindings()
+    }
+    
+    workspace, err = b.client.Workspaces.Create(context.Background(), b.Organization, workspaceCreateOptions)
+}
+```
+
+Location: `internal/cloud/backend.go:772-810`
+
+### Tag Synchronization
+
+The backend keeps workspace tags in sync:
+
+```go
+tagCheck, errFromTagCheck := b.workspaceTagsRequireUpdate(context.Background(), workspace, b.WorkspaceMapping)
+if tagCheck.requiresUpdate {
+    if !tagCheck.supportsKVTags {
+        options := tfe.WorkspaceAddTagsOptions{
+            Tags: b.WorkspaceMapping.tfeTags(),
+        }
+        err = b.client.Workspaces.AddTags(context.Background(), workspace.ID, options)
+    } else {
+        options := tfe.WorkspaceAddTagBindingsOptions{
+            TagBindings: b.WorkspaceMapping.asTFETagBindings(),
+        }
+        _, err = b.client.Workspaces.AddTagBindings(context.Background(), workspace.ID, options)
+    }
+}
+```
+
+Location: `internal/cloud/backend.go:837-861`
+
+## Integration Patterns
+
+### Policy Enforcement
+
+The cloud backend handles policy evaluation during runs:
+
+Location: `internal/cloud/backend_taskStage_policyEvaluation.go`
+
+### Cost Estimation
+
+Cost estimates are displayed during planning:
+
+Location: `internal/cloud/backend_plan.go`
+
+### State Locking
+
+Remote state is automatically locked during operations:
+
+Location: `internal/cloud/state.go`
+
+## Testing Integration
+
+Run tests remotely on HCP Terraform:
+
+```bash
+terraform test -cloud-run=app.terraform.io/my-org/my-module
+```
+
+Implementation:
+
+```go
+runner = &cloud.TestSuiteRunner{
+    ConfigDirectory:      ".",
+    Config:               config,
+    Services:             c.Services,
+    Source:               args.CloudRunSource,
+    GlobalVariables:      variables,
+    OperationParallelism: args.OperationParallelism,
+    Filters:              args.Filter,
+}
+```
+
+Location: `internal/command/test.go:140-157`
+
+## Best Practices
+
+### 1. Use Environment Variables for Configuration
+
+```bash
+# .envrc or CI/CD configuration
+export TF_CLOUD_ORGANIZATION="my-org"
+export TF_CLOUD_PROJECT="infrastructure"
+```
+
+### 2. Organize Workspaces with Tags
+
+```hcl
+terraform {
+  cloud {
+    organization = "my-org"
+    
+    workspaces {
+      tags = {
+        environment = "production"
+        team        = "platform"
+        region      = "us-west-2"
+      }
+    }
+  }
+}
+```
+
+### 3. Use TF_WORKSPACE for Multi-Workspace Setups
+
+```bash
+# Select workspace dynamically
+export TF_WORKSPACE="production-us-west-2"
+terraform plan
+```
+
+### 4. Leverage Local Execution When Needed
+
+```bash
+# Force local execution for debugging
+export TF_FORCE_LOCAL_BACKEND=1
+terraform plan
+```
+
+### 5. Implement Proper Error Handling
+
+The cloud integration includes retry logic:
+
+```go
+func (b *Cloud) retryLogHook(attemptNum int, resp *http.Response) {
+    if b.CLI != nil {
+        if output := b.viewHooks.RetryLogHook(attemptNum, resp, true); len(output) > 0 {
+            b.CLI.Output(b.Colorize().Color(output))
+        }
+    }
+}
+```
+
+Location: `internal/cloud/backend.go:611-619`
+
+## Troubleshooting
+
+### Connection Issues
+
+Enable retry logging:
+
+```go
+// Enable retries for server errors
+b.client.RetryServerErrors(true)
+```
+
+Location: `internal/cloud/backend.go:434`
+
+### Version Conflicts
+
+Ignore version conflicts if needed:
+
+```go
+func (b *Cloud) IgnoreVersionConflict() {
+    b.ignoreVersionConflict = true
+}
+```
+
+Location: `internal/cloud/backend.go:1054-1056`
+
+### Debugging Remote Runs
+
+The cloud backend provides detailed output during remote operations through the `IntegrationOutputWriter` interface:
+
+Location: `internal/cloud/cloud_integration.go:18-117`
+
+## Related Resources
+
+- [Testing Framework](/advanced/testing) - Run tests on HCP Terraform
+- [Debugging](/advanced/debugging) - Debug cloud integration issues
+- [Stacks](/advanced/stacks) - Use Stacks with cloud backend

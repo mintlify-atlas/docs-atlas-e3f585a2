@@ -1,0 +1,441 @@
+---
+title: Resources
+description: Define and manage infrastructure resources in Terraform configurations.
+---
+
+# Resources
+
+Resources are the most important element in Terraform. Each resource block describes one or more infrastructure objects, such as virtual machines, storage buckets, or DNS records.
+
+## Resource Syntax
+
+A resource block declares a resource of a specific type with a specific local name:
+
+```hcl
+resource "<RESOURCE_TYPE>" "<NAME>" {
+  # Configuration arguments
+}
+```
+
+### Example
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+}
+```
+
+The resource type (`aws_instance`) and name (`web`) together form a unique identifier: `aws_instance.web`.
+
+## Resource Types
+
+Each provider defines resource types. The type name format is:
+
+```
+<PROVIDER>_<TYPE>
+```
+
+Examples:
+- `aws_instance` - AWS provider, instance resource
+- `azurerm_virtual_machine` - Azure provider, virtual machine resource
+- `google_compute_instance` - Google Cloud provider, compute instance resource
+
+## Resource Arguments
+
+### Provider-Specific Arguments
+
+Each resource type has its own set of required and optional arguments:
+
+```hcl
+resource "aws_instance" "web" {
+  # Required
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+  
+  # Optional
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = [aws_security_group.web.id]
+  
+  tags = {
+    Name        = "WebServer"
+    Environment = "production"
+  }
+}
+```
+
+### Nested Blocks
+
+Many resources support nested configuration blocks:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+  
+  network_interface {
+    device_index = 0
+    description  = "Main network interface"
+  }
+}
+```
+
+## Meta-Arguments
+
+Meta-arguments change resource behavior and work with any resource type.
+
+### count
+
+Create multiple instances using an integer:
+
+```hcl
+resource "aws_instance" "web" {
+  count = 3
+  
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+  
+  tags = {
+    Name = "web-${count.index}"
+  }
+}
+```
+
+Reference instances:
+```hcl
+# All instances
+all_ips = aws_instance.web[*].private_ip
+
+# Specific instance
+first_ip = aws_instance.web[0].private_ip
+```
+
+### for_each
+
+Create instances from a map or set:
+
+```hcl
+resource "aws_instance" "web" {
+  for_each = {
+    web1 = "t2.micro"
+    web2 = "t2.small"
+  }
+  
+  ami           = "ami-12345678"
+  instance_type = each.value
+  
+  tags = {
+    Name = each.key
+  }
+}
+```
+
+Reference instances:
+```hcl
+web1_ip = aws_instance.web["web1"].private_ip
+```
+
+<Warning>
+A resource cannot use both `count` and `for_each` - they are mutually exclusive.
+</Warning>
+
+### depends_on
+
+Explicitly declare dependencies:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+  
+  depends_on = [
+    aws_security_group.firewall,
+  ]
+}
+```
+
+<Note>
+Terraform automatically determines most dependencies. Use `depends_on` only when necessary.
+</Note>
+
+### provider
+
+Select a non-default provider configuration:
+
+```hcl
+resource "aws_instance" "web" {
+  provider = aws.west
+  
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+}
+```
+
+### lifecycle
+
+Customize resource lifecycle behavior:
+
+```hcl
+resource "aws_security_group" "firewall" {
+  lifecycle {
+    create_before_destroy = true
+    prevent_destroy       = true
+    
+    ignore_changes = [
+      description,
+    ]
+  }
+}
+```
+
+#### Lifecycle Arguments
+
+<ParamField path="create_before_destroy" type="boolean">
+  Create replacement before destroying the original. Useful for zero-downtime updates.
+</ParamField>
+
+<ParamField path="prevent_destroy" type="boolean">
+  Prevent accidental resource destruction. Terraform will error if you try to destroy this resource.
+</ParamField>
+
+<ParamField path="ignore_changes" type="list">
+  Ignore changes to specified attributes. Use `all` to ignore all changes.
+  
+  ```hcl
+  ignore_changes = [ami, instance_type]
+  # or
+  ignore_changes = all
+  ```
+</ParamField>
+
+<ParamField path="replace_triggered_by" type="list">
+  Replace this resource when specified resources change:
+  
+  ```hcl
+  lifecycle {
+    replace_triggered_by = [
+      aws_instance.web[1],
+      aws_security_group.firewall.id
+    ]
+  }
+  ```
+</ParamField>
+
+## Provisioners
+
+Provisioners run scripts or commands during resource creation or destruction:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+  
+  provisioner "local-exec" {
+    command = "echo ${self.private_ip} >> private_ips.txt"
+  }
+  
+  provisioner "remote-exec" {
+    inline = [
+      "sudo apt-get update",
+      "sudo apt-get install -y nginx",
+    ]
+  }
+}
+```
+
+<Warning>
+Provisioners are a last resort. Use them only when no other option exists. Consider cloud-init, user data, or configuration management tools instead.
+</Warning>
+
+### Provisioner Types
+
+- **local-exec** - Run commands on the machine running Terraform
+- **remote-exec** - Run commands on the remote resource
+- **file** - Copy files to the remote resource
+
+### Destroy-Time Provisioners
+
+```hcl
+provisioner "local-exec" {
+  when    = destroy
+  command = "./cleanup.sh ${self.id}"
+}
+```
+
+## Connection Blocks
+
+Configure how provisioners connect to resources:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+  
+  connection {
+    type        = "ssh"
+    host        = self.public_ip
+    user        = "ubuntu"
+    private_key = file("~/.ssh/id_rsa")
+  }
+  
+  provisioner "remote-exec" {
+    inline = ["echo hello"]
+  }
+}
+```
+
+## Preconditions and Postconditions
+
+Validate assumptions about resources:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = var.ami_id
+  instance_type = var.instance_type
+  
+  lifecycle {
+    precondition {
+      condition     = var.instance_type != "t2.nano"
+      error_message = "Instance type cannot be t2.nano."
+    }
+    
+    postcondition {
+      condition     = self.private_ip != ""
+      error_message = "Instance must have a private IP."
+    }
+  }
+}
+```
+
+## Resource Addresses
+
+Reference resources in your configuration:
+
+```hcl
+# Simple resource
+aws_instance.web
+
+# Resource with count
+aws_instance.web[0]
+aws_instance.web[*]  # All instances
+
+# Resource with for_each
+aws_instance.web["primary"]
+
+# Resource attributes
+aws_instance.web.id
+aws_instance.web.private_ip
+```
+
+## Resource Behavior
+
+### Create
+
+Terraform creates resources that don't exist:
+
+```bash
+terraform apply
+```
+
+### Update
+
+Terraform updates resources when arguments change:
+
+```hcl
+resource "aws_instance" "web" {
+  instance_type = "t2.small"  # Changed from t2.micro
+}
+```
+
+### Replace
+
+Some changes require replacement (destroying and recreating):
+
+```hcl
+resource "aws_instance" "web" {
+  ami = "ami-87654321"  # AMI change requires replacement
+}
+```
+
+### Destroy
+
+Remove resources from configuration:
+
+```bash
+terraform destroy
+```
+
+## Data Sources
+
+Read information about existing infrastructure:
+
+```hcl
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  }
+  
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+  
+  owners = ["099720109477"]
+}
+
+resource "aws_instance" "web" {
+  ami = data.aws_ami.ubuntu.id
+}
+```
+
+## Ephemeral Resources
+
+Short-lived resources that exist only during operations:
+
+```hcl
+ephemeral "aws_secret" "auth" {
+  for_each = local.auths
+  input    = each.value
+  
+  depends_on = [aws_instance.depends]
+}
+```
+
+<Note>
+Ephemeral resources are not stored in state and exist only during Terraform operations.
+</Note>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Descriptive Names" icon="tag">
+    Choose clear, descriptive names for resources that indicate their purpose.
+  </Card>
+  
+  <Card title="Minimize Provisioners" icon="shield-exclamation">
+    Avoid provisioners when possible. Use native resource features instead.
+  </Card>
+  
+  <Card title="Explicit Dependencies" icon="link">
+    Let Terraform infer dependencies. Use `depends_on` only when necessary.
+  </Card>
+  
+  <Card title="Lifecycle Management" icon="arrows-rotate">
+    Use lifecycle arguments to prevent accidental destruction of critical resources.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Providers" href="/language/providers" icon="plug">
+    Configure providers for resources
+  </Card>
+  
+  <Card title="Variables" href="/language/variables" icon="input-text">
+    Parameterize resource configurations
+  </Card>
+</CardGroup>

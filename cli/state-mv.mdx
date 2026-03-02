@@ -1,0 +1,167 @@
+---
+title: terraform state mv
+description: Move an item in the Terraform state.
+---
+
+The `terraform state mv` command moves items in the Terraform state, allowing you to rename resources or move them between modules.
+
+## Synopsis
+
+Move an item in the state.
+
+## Usage
+
+```bash
+terraform state mv [options] SOURCE DESTINATION
+```
+
+This command moves an item matched by the source address to the destination address. This command can also move items to a destination address in a completely different state file.
+
+This can be used for simple resource renaming, moving items to and from a module, moving entire modules, and more. Because this command can also move data to a completely new state, it can also be used for refactoring one configuration into multiple separately managed Terraform configurations.
+
+This command will output a backup copy of the state prior to saving any changes. The backup cannot be disabled. Due to the destructive nature of this command, backups are required.
+
+If you're moving an item to a different state file, a backup will be created for each state file.
+
+## Options
+
+<ParamField path="-dry-run" type="boolean">
+  If set, prints out what would've been moved but doesn't actually move anything.
+</ParamField>
+
+<ParamField path="-lock" type="boolean" default="true">
+  Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+</ParamField>
+
+<ParamField path="-lock-timeout" type="duration" default="0s">
+  Duration to retry a state lock.
+</ParamField>
+
+<ParamField path="-ignore-remote-version" type="boolean">
+  A rare option used for the remote backend only. See the remote backend documentation for more information.
+</ParamField>
+
+<ParamField path="-state" type="string">
+  Path to the source state file. Legacy option supported for the local backend only.
+</ParamField>
+
+<ParamField path="-state-out" type="string">
+  Path to the destination state file. Legacy option supported for the local backend only.
+</ParamField>
+
+<ParamField path="-backup" type="string" default="-">
+  Path where Terraform should write the backup for the source state. Legacy option supported for the local backend only.
+</ParamField>
+
+<ParamField path="-backup-out" type="string" default="-">
+  Path where Terraform should write the backup for the destination state. Legacy option supported for the local backend only.
+</ParamField>
+
+## Arguments
+
+<ParamField path="SOURCE" type="string" required>
+  The source address of the resource to move. Can be a resource instance, entire resource, or module.
+</ParamField>
+
+<ParamField path="DESTINATION" type="string" required>
+  The destination address where the resource should be moved.
+</ParamField>
+
+## Examples
+
+### Rename a resource
+
+Rename a resource from one name to another:
+
+```bash
+terraform state mv aws_instance.old_name aws_instance.new_name
+```
+
+Output:
+```
+Move "aws_instance.old_name" to "aws_instance.new_name"
+Successfully moved 1 object(s).
+```
+
+### Move a resource into a module
+
+Move a resource from the root module into a child module:
+
+```bash
+terraform state mv aws_instance.web module.servers.aws_instance.web
+```
+
+### Move a resource out of a module
+
+Move a resource from a module to the root:
+
+```bash
+terraform state mv module.servers.aws_instance.web aws_instance.web
+```
+
+### Move an entire module
+
+Move all resources from one module to another:
+
+```bash
+terraform state mv module.old_module module.new_module
+```
+
+### Move resource to different state file
+
+Move a resource to a different state file:
+
+```bash
+terraform state mv -state-out=other.tfstate aws_instance.web aws_instance.web
+```
+
+### Dry run
+
+Preview what would be moved without making changes:
+
+```bash
+terraform state mv -dry-run aws_instance.old aws_instance.new
+```
+
+Output:
+```
+Would move "aws_instance.old" to "aws_instance.new"
+```
+
+### Move indexed resource
+
+Move a resource instance with an index:
+
+```bash
+terraform state mv 'aws_instance.web[0]' 'aws_instance.web[1]'
+```
+
+### Move to resource with count
+
+Move a single instance to become part of a counted resource:
+
+```bash
+terraform state mv aws_instance.web 'aws_instance.web[0]'
+```
+
+## Common Use Cases
+
+### Refactor resource names
+
+When renaming resources in your configuration, use `state mv` to update the state to match without destroying and recreating the resources.
+
+### Reorganize modules
+
+Move resources into or out of modules as your infrastructure organization evolves.
+
+### Split configurations
+
+When splitting a monolithic Terraform configuration into multiple separate configurations, use `state mv` with `-state-out` to move resources between state files.
+
+### Add or remove count/for_each
+
+When adding `count` or `for_each` to an existing resource, use `state mv` to move the single instance to the appropriate indexed location.
+
+### Module refactoring
+
+Rename modules or reorganize module hierarchies without recreating infrastructure.

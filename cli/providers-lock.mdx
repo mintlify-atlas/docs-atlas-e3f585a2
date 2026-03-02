@@ -1,0 +1,207 @@
+---
+title: terraform providers lock
+description: The terraform providers lock command writes out dependency locks for the configured providers.
+---
+
+# Command: providers lock
+
+The `terraform providers lock` command writes out dependency locks for the configured providers, creating or updating the dependency lock file (`.terraform.lock.hcl`).
+
+## Usage
+
+```bash
+terraform providers lock [options] [providers...]
+```
+
+## Description
+
+Normally the dependency lock file (`.terraform.lock.hcl`) is updated automatically by `terraform init`. However, the information available to the normal provider installer can be constrained when installing providers from filesystem or network mirrors, which can result in an incomplete lock file.
+
+The `providers lock` subcommand addresses this by updating the lock file based on the official packages available in the origin registry, ignoring the currently-configured installation strategy.
+
+### Key Features
+
+- **Cross-Platform Checksums**: Generate checksums for multiple target platforms in a single operation
+- **Registry Direct Access**: Consults upstream registries directly, even when a local mirror is configured
+- **Selective Updates**: Lock specific providers by listing them as arguments
+- **Mirror Support**: Can also work with filesystem and network mirrors if needed
+
+## Options
+
+### Platform Options
+
+- `-platform=os_arch` - Choose a target platform to request package checksums for. Can be specified multiple times to include checksums for multiple platforms.
+
+  By default, Terraform requests package checksums only for the current platform. Use this option to include additional platforms.
+
+  Target names consist of an operating system and a CPU architecture (e.g., `linux_amd64`, `darwin_arm64`, `windows_amd64`).
+
+  **Example platforms**:
+  - `linux_amd64` - Linux on AMD64/x86_64
+  - `linux_arm64` - Linux on ARM64
+  - `darwin_amd64` - macOS on Intel
+  - `darwin_arm64` - macOS on Apple Silicon
+  - `windows_amd64` - Windows on AMD64/x86_64
+
+### Mirror Options
+
+- `-fs-mirror=dir` - Consult the given filesystem mirror directory instead of the origin registry for each provider.
+
+  This is necessary to generate lock file entries for a provider that is available only via a mirror and not published in an upstream registry. The checksums will be limited to what Terraform can learn from the mirror directory.
+
+- `-net-mirror=url` - Consult the given network mirror (as a base URL) instead of the origin registry.
+
+  This is necessary to generate lock file entries for a provider available only via a network mirror. The checksums will be limited to what Terraform can learn from the mirror indices.
+
+  The URL must be a valid `https:` URL.
+
+  **Note**: The `-fs-mirror` and `-net-mirror` options are mutually exclusive.
+
+### Other Options
+
+- `-enable-plugin-cache` - Enable the usage of the globally configured plugin cache. This speeds up the locking process but means providers won't be loaded from an authoritative source.
+
+- `-test-directory=path` - Set the Terraform test directory. Defaults to `"tests"`.
+
+## Arguments
+
+You can optionally specify one or more provider source addresses to lock specific providers:
+
+```bash
+terraform providers lock hashicorp/aws hashicorp/random
+```
+
+By default, the command updates the lock file for every provider declared in the configuration.
+
+## Behavior
+
+The command:
+
+1. Reads the current configuration to determine provider requirements
+2. Reads any existing lock file to honor version selections
+3. Downloads provider packages for each specified platform to a temporary directory
+4. Calculates checksums for each provider/platform combination
+5. Merges the new checksums with existing lock file entries
+6. Writes the updated lock file
+7. Cleans up temporary downloaded packages
+
+### Lock File Updates
+
+The command will report one of three outcomes for each provider/platform combination:
+
+- **New provider**: The provider was not previously in the lock file
+- **New hashes**: Additional checksums for a new platform were added
+- **No change**: All checksums for the platform were already tracked
+
+## Examples
+
+### Lock for Current Platform
+
+Generate lock file entries for the current platform:
+
+```bash
+terraform providers lock
+```
+
+### Lock for Multiple Platforms
+
+Generate checksums for Linux, macOS (Intel and Apple Silicon), and Windows:
+
+```bash
+terraform providers lock \
+  -platform=linux_amd64 \
+  -platform=darwin_amd64 \
+  -platform=darwin_arm64 \
+  -platform=windows_amd64
+```
+
+### Lock Specific Providers
+
+Update lock file entries only for AWS and Random providers:
+
+```bash
+terraform providers lock hashicorp/aws hashicorp/random
+```
+
+### Lock from Filesystem Mirror
+
+Generate lock entries from a local filesystem mirror:
+
+```bash
+terraform providers lock -fs-mirror=/path/to/mirror
+```
+
+### Lock from Network Mirror
+
+Generate lock entries from a network mirror:
+
+```bash
+terraform providers lock -net-mirror=https://terraform.example.com/providers/
+```
+
+### Using Plugin Cache
+
+Speed up locking by using the global plugin cache:
+
+```bash
+terraform providers lock -enable-plugin-cache \
+  -platform=linux_amd64 \
+  -platform=darwin_arm64
+```
+
+## Output Example
+
+```
+- Fetching hashicorp/aws 5.31.0 for linux_amd64...
+- Retrieved hashicorp/aws 5.31.0 for linux_amd64 (signed by HashiCorp)
+- Obtained hashicorp/aws checksums for linux_amd64; Additional checksums for this platform are now tracked in the lock file
+- Fetching hashicorp/random 3.6.0 for linux_amd64...
+- Retrieved hashicorp/random 3.6.0 for linux_amd64 (signed by HashiCorp)
+- Obtained hashicorp/random checksums for linux_amd64; This was a new provider and the checksums for this platform are now tracked in the lock file
+
+Success! Terraform has updated the lock file.
+
+Review the changes in .terraform.lock.hcl and then commit to your
+version control system to retain the new checksums.
+```
+
+## Use Cases
+
+### Multi-Platform Teams
+
+When working in a team with different operating systems, lock all platforms:
+
+```bash
+terraform providers lock \
+  -platform=linux_amd64 \
+  -platform=darwin_amd64 \
+  -platform=darwin_arm64 \
+  -platform=windows_amd64
+```
+
+Commit the resulting `.terraform.lock.hcl` to version control so all team members can verify provider authenticity.
+
+### Using Local Mirrors
+
+If you use a local mirror for day-to-day work, you can still populate the lock file with upstream checksums:
+
+1. Run `terraform providers lock` (which ignores your configured mirror)
+2. Commit the lock file to version control
+3. Subsequent `terraform init` commands will verify your local mirror against the upstream checksums
+
+### CI/CD Pipelines
+
+Generate lock files in CI for the platforms where you deploy:
+
+```bash
+terraform providers lock \
+  -platform=linux_amd64 \
+  -platform=linux_arm64
+```
+
+## Related Commands
+
+- [`terraform init`](/cli/init) - Initialize providers (automatically updates lock file)
+- [`terraform providers`](/cli/providers) - Show provider requirements
+- [`terraform providers mirror`](/cli/providers-mirror) - Create a local mirror of providers
+- [`terraform providers schema`](/cli/providers-schema) - Show provider schemas

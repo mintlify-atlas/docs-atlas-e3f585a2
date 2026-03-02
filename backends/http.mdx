@@ -1,0 +1,401 @@
+---
+title: HTTP Backend
+description: Store Terraform state via REST API endpoints.
+---
+
+# HTTP Backend
+
+The **HTTP** backend stores state using REST API endpoints. This is a generic backend that works with any HTTP server implementing the required API.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/http/backend.go`
+
+## Use Cases
+
+- Custom state storage implementations
+- Integration with existing HTTP-based systems
+- Cloud-agnostic state management
+- Simple state storage without additional infrastructure
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "http" {
+    address = "https://api.example.com/terraform/state"
+  }
+}
+```
+
+## Required Configuration
+
+### address
+- **Type:** String
+- **Required:** Yes
+- **Environment Variable:** `TF_HTTP_ADDRESS`
+- **Description:** The URL of the REST endpoint for state operations
+
+The URL must use `http` or `https` scheme.
+
+```hcl
+terraform {
+  backend "http" {
+    address = "https://api.example.com/terraform/state/production"
+  }
+}
+```
+
+## Optional Configuration
+
+### update_method
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"POST"`
+- **Environment Variable:** `TF_HTTP_UPDATE_METHOD`
+- **Description:** HTTP method to use when updating state
+
+```hcl
+terraform {
+  backend "http" {
+    address       = "https://api.example.com/terraform/state"
+    update_method = "PUT"
+  }
+}
+```
+
+## State Locking Configuration
+
+### lock_address
+- **Type:** String
+- **Optional:** Yes
+- **Environment Variable:** `TF_HTTP_LOCK_ADDRESS`
+- **Description:** The address of the lock REST endpoint
+
+If not set, state locking is disabled.
+
+```hcl
+terraform {
+  backend "http" {
+    address      = "https://api.example.com/terraform/state"
+    lock_address = "https://api.example.com/terraform/lock"
+  }
+}
+```
+
+### lock_method
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"LOCK"`
+- **Environment Variable:** `TF_HTTP_LOCK_METHOD`
+- **Description:** HTTP method to use when locking
+
+```hcl
+terraform {
+  backend "http" {
+    address      = "https://api.example.com/terraform/state"
+    lock_address = "https://api.example.com/terraform/lock"
+    lock_method  = "POST"
+  }
+}
+```
+
+### unlock_address
+- **Type:** String
+- **Optional:** Yes
+- **Environment Variable:** `TF_HTTP_UNLOCK_ADDRESS`
+- **Description:** The address of the unlock REST endpoint
+
+```hcl
+terraform {
+  backend "http" {
+    address        = "https://api.example.com/terraform/state"
+    lock_address   = "https://api.example.com/terraform/lock"
+    unlock_address = "https://api.example.com/terraform/unlock"
+  }
+}
+```
+
+### unlock_method
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"UNLOCK"`
+- **Environment Variable:** `TF_HTTP_UNLOCK_METHOD`
+- **Description:** HTTP method to use when unlocking
+
+```hcl
+terraform {
+  backend "http" {
+    address        = "https://api.example.com/terraform/state"
+    lock_address   = "https://api.example.com/terraform/lock"
+    unlock_address = "https://api.example.com/terraform/unlock"
+    unlock_method  = "DELETE"
+  }
+}
+```
+
+## Authentication
+
+### HTTP Basic Authentication
+
+```hcl
+terraform {
+  backend "http" {
+    address  = "https://api.example.com/terraform/state"
+    username = "terraform"
+    password = "supersecret"
+  }
+}
+```
+
+**Environment Variables:**
+- `TF_HTTP_USERNAME`
+- `TF_HTTP_PASSWORD`
+
+## TLS Configuration
+
+### Skip Certificate Verification
+
+```hcl
+terraform {
+  backend "http" {
+    address                = "https://api.example.com/terraform/state"
+    skip_cert_verification = true
+  }
+}
+```
+
+**Warning:** Only use in development environments.
+
+### Custom CA Certificate
+
+```hcl
+terraform {
+  backend "http" {
+    address                  = "https://api.example.com/terraform/state"
+    client_ca_certificate_pem = file("/path/to/ca.pem")
+  }
+}
+```
+
+**Environment Variable:** `TF_HTTP_CLIENT_CA_CERTIFICATE_PEM`
+
+Provide a PEM-encoded CA certificate chain to verify the server certificate.
+
+### Mutual TLS (mTLS)
+
+```hcl
+terraform {
+  backend "http" {
+    address                 = "https://api.example.com/terraform/state"
+    client_certificate_pem  = file("/path/to/client.pem")
+    client_private_key_pem  = file("/path/to/client-key.pem")
+  }
+}
+```
+
+**Environment Variables:**
+- `TF_HTTP_CLIENT_CERTIFICATE_PEM`
+- `TF_HTTP_CLIENT_PRIVATE_KEY_PEM`
+
+**Note:** Both certificate and private key must be provided together.
+
+## Retry Configuration
+
+### retry_max
+- **Type:** Number
+- **Optional:** Yes
+- **Default:** `2`
+- **Environment Variable:** `TF_HTTP_RETRY_MAX`
+- **Description:** Maximum number of HTTP request retries
+
+```hcl
+terraform {
+  backend "http" {
+    address   = "https://api.example.com/terraform/state"
+    retry_max = 5
+  }
+}
+```
+
+### retry_wait_min
+- **Type:** Number (seconds)
+- **Optional:** Yes
+- **Default:** `1`
+- **Environment Variable:** `TF_HTTP_RETRY_WAIT_MIN`
+- **Description:** Minimum time to wait between retries
+
+```hcl
+terraform {
+  backend "http" {
+    address        = "https://api.example.com/terraform/state"
+    retry_wait_min = 2
+  }
+}
+```
+
+### retry_wait_max
+- **Type:** Number (seconds)
+- **Optional:** Yes
+- **Default:** `30`
+- **Environment Variable:** `TF_HTTP_RETRY_WAIT_MAX`
+- **Description:** Maximum time to wait between retries
+
+```hcl
+terraform {
+  backend "http" {
+    address        = "https://api.example.com/terraform/state"
+    retry_wait_max = 60
+  }
+}
+```
+
+## API Requirements
+
+The HTTP backend expects the following API:
+
+### GET (Retrieve State)
+
+**Request:**
+```
+GET {address}
+```
+
+**Response:**
+- **200 OK** - Returns the current state as JSON
+- **404 Not Found** - No state exists (treated as empty state)
+
+### POST/PUT (Update State)
+
+**Request:**
+```
+POST/PUT {address}
+Content-Type: application/json
+
+{state JSON}
+```
+
+**Response:**
+- **200 OK** - State updated successfully
+
+### DELETE (Delete State)
+
+**Request:**
+```
+DELETE {address}
+```
+
+**Response:**
+- **200 OK** - State deleted successfully
+
+### LOCK (Lock State)
+
+**Request:**
+```
+LOCK {lock_address}
+Content-Type: application/json
+
+{
+  "ID": "lock-id",
+  "Operation": "OperationTypeApply",
+  "Info": "additional info",
+  "Who": "user@host",
+  "Version": "1.0.0",
+  "Created": "2024-01-01T00:00:00Z",
+  "Path": "path/to/state"
+}
+```
+
+**Response:**
+- **200 OK** - Lock acquired
+- **409 Conflict** - Lock already held (returns lock info)
+
+### UNLOCK (Unlock State)
+
+**Request:**
+```
+UNLOCK {unlock_address}
+Content-Type: application/json
+
+{
+  "ID": "lock-id"
+}
+```
+
+**Response:**
+- **200 OK** - Lock released
+
+## Configuration Options Summary
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `address` | string | Yes | - | State REST endpoint URL |
+| `update_method` | string | No | `POST` | HTTP method for updates |
+| `lock_address` | string | No | - | Lock endpoint URL |
+| `lock_method` | string | No | `LOCK` | HTTP method for locking |
+| `unlock_address` | string | No | - | Unlock endpoint URL |
+| `unlock_method` | string | No | `UNLOCK` | HTTP method for unlocking |
+| `username` | string | No | - | Basic auth username |
+| `password` | string | No | - | Basic auth password |
+| `skip_cert_verification` | bool | No | `false` | Skip TLS verification |
+| `retry_max` | number | No | `2` | Max retry attempts |
+| `retry_wait_min` | number | No | `1` | Min retry wait (seconds) |
+| `retry_wait_max` | number | No | `30` | Max retry wait (seconds) |
+| `client_ca_certificate_pem` | string | No | - | CA certificate PEM |
+| `client_certificate_pem` | string | No | - | Client certificate PEM |
+| `client_private_key_pem` | string | No | - | Client private key PEM |
+
+## Example: GitLab HTTP Backend
+
+```hcl
+terraform {
+  backend "http" {
+    address        = "https://gitlab.com/api/v4/projects/12345/terraform/state/production"
+    lock_address   = "https://gitlab.com/api/v4/projects/12345/terraform/state/production/lock"
+    unlock_address = "https://gitlab.com/api/v4/projects/12345/terraform/state/production/lock"
+    lock_method    = "POST"
+    unlock_method  = "DELETE"
+    username       = "gitlab-user"
+    password       = "<personal-access-token>"
+  }
+}
+```
+
+## Example: Custom HTTP Backend with mTLS
+
+```hcl
+terraform {
+  backend "http" {
+    address = "https://state.example.com/api/v1/state"
+    
+    client_ca_certificate_pem = file("/etc/terraform/ca.pem")
+    client_certificate_pem    = file("/etc/terraform/client.pem")
+    client_private_key_pem    = file("/etc/terraform/client-key.pem")
+    
+    lock_address   = "https://state.example.com/api/v1/lock"
+    unlock_address = "https://state.example.com/api/v1/unlock"
+    lock_method    = "POST"
+    unlock_method  = "DELETE"
+    
+    retry_max      = 5
+    retry_wait_min = 2
+    retry_wait_max = 60
+  }
+}
+```
+
+## Limitations
+
+1. **No workspace support** - The HTTP backend does not support workspaces
+2. **Custom implementation required** - Server must implement the expected API
+3. **No versioning** - State versioning depends on server implementation
+
+## Best Practices
+
+1. **Use HTTPS** for all production endpoints
+2. **Enable state locking** to prevent concurrent modifications
+3. **Implement authentication** on the server side
+4. **Version your API** for backward compatibility
+5. **Log all operations** for audit trails
+6. **Implement proper error handling** in the server
+7. **Use mTLS** for enhanced security

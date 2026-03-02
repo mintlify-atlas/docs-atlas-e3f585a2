@@ -1,0 +1,453 @@
+---
+title: Code Style Guidelines
+description: Learn about Terraform's code style requirements, formatting tools, and static analysis checks that ensure code quality.
+---
+
+## Overview
+
+Terraform enforces code style through automated checks that run on all pull requests. Following these guidelines ensures your contributions pass CI checks and maintain consistency with the codebase.
+
+## Code Formatting
+
+### Go Format (gofmt)
+
+All Go code must be formatted with `gofmt`.
+
+#### Check Formatting
+
+```bash
+# Check if formatting is needed
+make fmtcheck
+
+# Or run the script directly
+./scripts/gofmtcheck.sh
+```
+
+#### Apply Formatting
+
+```bash
+# Format all files
+go fmt ./...
+
+# Format specific package
+go fmt ./internal/command
+```
+
+<Warning>
+  Pull requests with unformatted code will fail CI checks. Always run `go fmt` before committing.
+</Warning>
+
+### Import Organization (goimports)
+
+Import statements must be organized with `goimports`.
+
+#### Check Imports
+
+```bash
+# Check import formatting
+make importscheck
+
+# Or run the script directly
+./scripts/goimportscheck.sh
+```
+
+<Info>
+  The imports check only applies to files changed relative to the `main` branch, allowing gradual consistency improvements.
+</Info>
+
+#### Fix Import Organization
+
+```bash
+# Fix imports in a specific file
+go tool golang.org/x/tools/cmd/goimports -w -l path/to/file.go
+
+# Fix imports in all changed files
+go tool golang.org/x/tools/cmd/goimports -w -l $(git diff --name-only origin/main | grep ".go")
+```
+
+#### Import Grouping
+
+Imports should be grouped in this order:
+1. Standard library packages
+2. External packages
+3. Terraform internal packages
+
+Example:
+```go
+import (
+    "context"
+    "fmt"
+    
+    "github.com/hashicorp/hcl/v2"
+    "github.com/zclconf/go-cty/cty"
+    
+    "github.com/hashicorp/terraform/internal/addrs"
+    "github.com/hashicorp/terraform/internal/configs"
+)
+```
+
+## Static Analysis
+
+### go vet
+
+Basic static analysis with `go vet`:
+
+```bash
+# Run go vet
+make vetcheck
+
+# Or run directly
+go vet ./...
+```
+
+### staticcheck
+
+Advanced static analysis with [staticcheck](https://staticcheck.io/):
+
+```bash
+# Run staticcheck
+make staticcheck
+
+# Or run the script directly
+./scripts/staticcheck.sh
+```
+
+#### staticcheck Configuration
+
+Terraform's staticcheck configuration (`staticcheck.conf`) enables most checks but excludes:
+
+- **ST***: Style-related checks (Terraform intentionally breaks some conventions)
+- **SA1019**: Deprecation warnings (updated locally during nearby changes)
+- **SA4003**: Unsigned comparison checks (conflicts with generated code)
+
+```text staticcheck.conf
+checks = ["all", "-SA1019", "-SA4003", "-ST*"]
+```
+
+<Info>
+  The goal is finding issues that reduce code clarity or may result in bugs, not enforcing arbitrary style preferences.
+</Info>
+
+### Exhaustiveness Checking
+
+Check that switch statements cover all enum cases:
+
+```bash
+make exhaustive
+
+# Or run directly
+./scripts/exhaustive.sh
+```
+
+## Copyright Headers
+
+All source files must include proper copyright headers.
+
+### Check Copyright Headers
+
+```bash
+# Check headers (dry run)
+make copyright
+
+# Or run the script
+./scripts/copyright.sh --plan
+```
+
+### Fix Copyright Headers
+
+```bash
+# Apply copyright headers
+make copyrightfix
+
+# Or run the script
+./scripts/copyright.sh
+```
+
+<Note>
+  Copyright headers are automatically managed by the `copywrite` tool. Don't manually edit the SPDX headers.
+</Note>
+
+## Naming Conventions
+
+### Packages
+
+- Use short, lowercase names
+- No underscores or mixed caps
+- Avoid generic names like `util` or `common`
+
+Examples: `addrs`, `configs`, `command`
+
+### Files
+
+- Lowercase with underscores: `config_build.go`
+- Test files: `config_build_test.go`
+- Platform-specific: `file_unix.go`, `file_windows.go`
+
+### Types and Functions
+
+- Use MixedCaps (PascalCase) for exported names
+- Use mixedCaps (camelCase) for unexported names
+- Acronyms should be consistent: `HTTPServer` or `httpServer`, not `HttpServer`
+
+### Variables
+
+- Short names for limited scope: `i`, `n`, `err`
+- Descriptive names for larger scope: `resourceAddress`, `configBody`
+- Avoid stuttering: `config.Body` not `config.ConfigBody`
+
+## Code Organization
+
+### File Structure
+
+Organize each file in this order:
+1. Copyright header
+2. Package declaration
+3. Import statements
+4. Package documentation (on `package` statement)
+5. Type definitions
+6. Constants and variables
+7. Function implementations
+
+### Function Length
+
+Keep functions focused and reasonably sized:
+- Prefer smaller, focused functions
+- Extract complex logic into helper functions
+- If a function is too long, consider breaking it up
+
+### Comments
+
+#### Package Comments
+
+```go
+// Package addrs contains types that represent "addresses" of objects
+// in Terraform's configuration and state.
+package addrs
+```
+
+#### Function Comments
+
+Exported functions must have comments starting with the function name:
+
+```go
+// ParseResourceAddress parses a string representation of a resource
+// address into a ResourceAddress struct.
+func ParseResourceAddress(s string) (ResourceAddress, error) {
+    // ...
+}
+```
+
+#### Inline Comments
+
+Use inline comments to explain "why", not "what":
+
+```go
+// Good: Explains why
+// We need to copy the slice here because the caller might mutate it.
+newSlice := make([]string, len(oldSlice))
+copy(newSlice, oldSlice)
+
+// Bad: Explains what (obvious from code)
+// Copy the slice
+newSlice := make([]string, len(oldSlice))
+copy(newSlice, oldSlice)
+```
+
+## Error Handling
+
+### Error Messages
+
+- Start with lowercase (errors are usually embedded in other messages)
+- No trailing punctuation
+- Be specific and actionable
+
+```go
+// Good
+return nil, fmt.Errorf("invalid resource address %q: must include resource type", addr)
+
+// Bad
+return nil, errors.New("Invalid address.")
+```
+
+### Error Wrapping
+
+Use `%w` for wrapping errors (Go 1.13+):
+
+```go
+if err := doSomething(); err != nil {
+    return fmt.Errorf("failed to do something: %w", err)
+}
+```
+
+## Testing Style
+
+### Test Function Names
+
+Follow the `TestXxx` convention:
+
+```go
+func TestResourceAddress_Parse(t *testing.T)
+func TestResourceAddress_String(t *testing.T)
+func TestConfig_Build_WithModules(t *testing.T)
+```
+
+### Table-Driven Tests
+
+Prefer table-driven tests:
+
+```go
+func TestParseName(t *testing.T) {
+    tests := map[string]struct {
+        input   string
+        want    string
+        wantErr string
+    }{
+        "valid name": {
+            input: "example",
+            want:  "example",
+        },
+        "invalid empty": {
+            input:   "",
+            wantErr: "name cannot be empty",
+        },
+    }
+    
+    for name, tc := range tests {
+        t.Run(name, func(t *testing.T) {
+            got, err := ParseName(tc.input)
+            // assertions...
+        })
+    }
+}
+```
+
+### Test Helpers
+
+Prefix test helper functions with `test`:
+
+```go
+func testConfig(t *testing.T) *Config {
+    t.Helper()
+    // ...
+}
+```
+
+## Generated Code
+
+Some files are generated and should not be manually edited.
+
+### Identify Generated Files
+
+Generated files include a comment:
+
+```go
+// Code generated by "tool-name". DO NOT EDIT.
+```
+
+### Regenerate Code
+
+```bash
+# Most generated code
+go generate ./...
+
+# Protocol buffers
+make protobuf
+```
+
+<Warning>
+  Never manually edit generated code. Changes will be overwritten. Modify the source templates or definitions instead.
+</Warning>
+
+## Pre-Commit Checks
+
+Run all checks before committing:
+
+```bash
+# Format code
+go fmt ./...
+
+# Organize imports (for changed files)
+go tool golang.org/x/tools/cmd/goimports -w -l $(git diff --cached --name-only --diff-filter=ACM | grep '.go$')
+
+# Run all checks
+make fmtcheck
+make importscheck
+make vetcheck
+make staticcheck
+make copyright
+
+# Run tests
+go test ./...
+```
+
+<Tip>
+  Consider creating a git pre-commit hook to run these checks automatically.
+</Tip>
+
+## CI Checks
+
+Pull requests run these automated checks:
+
+1. **gofmt**: Code formatting
+2. **goimports**: Import organization
+3. **go vet**: Basic static analysis
+4. **staticcheck**: Advanced static analysis
+5. **copyright**: Copyright header validation
+6. **tests**: Unit and acceptance tests
+
+All checks must pass before a PR can be merged.
+
+## Editor Configuration
+
+### VS Code
+
+Recommended settings for `.vscode/settings.json`:
+
+```json
+{
+    "go.formatTool": "goimports",
+    "go.lintTool": "staticcheck",
+    "go.lintOnSave": "workspace",
+    "editor.formatOnSave": true,
+    "go.vetOnSave": "workspace",
+    "go.buildOnSave": "workspace"
+}
+```
+
+### GoLand
+
+1. Enable "gofmt" in Settings → Go → Fmt
+2. Enable "Optimize imports" in Settings → Tools → Actions on Save
+3. Install the staticcheck plugin
+
+## Best Practices
+
+<Tip>
+  **Run formatters early**: Format code frequently during development, not just before committing.
+</Tip>
+
+<Tip>
+  **Fix one issue at a time**: If staticcheck reports multiple issues, fix them in separate commits for easier review.
+</Tip>
+
+<Tip>
+  **Understand the rules**: Read staticcheck documentation to understand why certain patterns are flagged.
+</Tip>
+
+<Tip>
+  **Consistency over preferences**: Follow Terraform's conventions even if you prefer a different style.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Pull Requests" icon="code-pull-request" href="/contributing/pull-requests">
+    Learn how to submit well-formatted PRs
+  </Card>
+  <Card title="Testing" icon="flask" href="/contributing/testing">
+    Write tests that follow style guidelines
+  </Card>
+  <Card title="Building" icon="hammer" href="/contributing/building">
+    Build Terraform to test your changes
+  </Card>
+</CardGroup>

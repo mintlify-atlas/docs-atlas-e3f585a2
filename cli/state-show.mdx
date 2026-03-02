@@ -1,0 +1,112 @@
+---
+title: terraform state show
+description: Show the attributes of a resource in the Terraform state.
+---
+
+The `terraform state show` command displays the attributes of a single resource in the Terraform state.
+
+## Synopsis
+
+Show a resource in the state.
+
+## Usage
+
+```bash
+terraform state show [options] ADDRESS
+```
+
+This command shows the attributes of a single resource in the Terraform state. The address argument must be used to specify a single resource. You can view the list of available resources with `terraform state list`.
+
+## Options
+
+<ParamField path="-state" type="string">
+  Path to a Terraform state file to use to look up Terraform-managed resources. By default it will use the state "terraform.tfstate" if it exists.
+</ParamField>
+
+## Arguments
+
+<ParamField path="ADDRESS" type="string" required>
+  The address of the resource instance to show. Must be a complete resource instance address.
+</ParamField>
+
+## Examples
+
+### Show a single resource instance
+
+Display the attributes of a specific resource:
+
+```bash
+terraform state show aws_instance.web
+```
+
+Example output:
+```hcl
+# aws_instance.web:
+resource "aws_instance" "web" {
+    ami                          = "ami-0c55b159cbfafe1f0"
+    arn                          = "arn:aws:ec2:us-west-2:123456789012:instance/i-1234567890abcdef0"
+    associate_public_ip_address  = true
+    availability_zone            = "us-west-2a"
+    instance_type                = "t2.micro"
+    id                           = "i-1234567890abcdef0"
+    private_ip                   = "10.0.1.5"
+    public_ip                    = "54.123.45.67"
+    subnet_id                    = "subnet-12345678"
+    tags                         = {
+        "Name" = "web-server"
+    }
+    vpc_security_group_ids       = [
+        "sg-12345678",
+    ]
+}
+```
+
+### Show a resource with count
+
+Display a specific instance from a resource with count:
+
+```bash
+terraform state show 'aws_instance.db[0]'
+```
+
+### Show a module resource
+
+Display a resource within a module:
+
+```bash
+terraform state show module.vpc.aws_vpc.main
+```
+
+### Use custom state file
+
+Show a resource from a specific state file:
+
+```bash
+terraform state show -state=path/to/terraform.tfstate aws_instance.web
+```
+
+## Common Use Cases
+
+### Inspect resource attributes
+
+Use `state show` to inspect the current attributes of a resource, including computed values that were set during the last apply.
+
+### Verify resource configuration
+
+Compare the actual state values with your expected configuration to identify drift or verify that changes were applied correctly.
+
+### Debug issues
+
+When troubleshooting issues, use `state show` to examine the exact state of resources as Terraform sees them.
+
+### Extract resource IDs
+
+Get resource IDs and other attributes for use in scripts or documentation:
+
+```bash
+terraform state show aws_instance.web | grep 'id ='
+```
+
+### Review module outputs
+
+Inspect resources created by modules to understand their configuration and attributes.

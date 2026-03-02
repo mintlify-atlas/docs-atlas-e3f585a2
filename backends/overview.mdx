@@ -1,0 +1,114 @@
+---
+title: Backends Overview
+description: Learn about Terraform backends for remote state storage and operations.
+---
+
+# Backends Overview
+
+Backends define where Terraform stores state data files. By default, Terraform uses the "local" backend, which stores state files on the local filesystem. Remote backends allow you to store state remotely, enable team collaboration, and provide state locking.
+
+## What is a Backend?
+
+A backend in Terraform determines:
+
+- **Where state is stored** - The location of your Terraform state file
+- **How operations are executed** - Whether operations run locally or remotely
+- **State locking** - Prevention of concurrent state modifications
+- **State versioning** - Historical tracking of state changes
+
+## Backend Interface
+
+All backends implement the core backend interface defined in `/internal/backend/backend.go:44-106`:
+
+```go
+type Backend interface {
+    // ConfigSchema returns a description of the expected configuration
+    ConfigSchema() *configschema.Block
+    
+    // PrepareConfig validates configuration values
+    PrepareConfig(cty.Value) (cty.Value, tfdiags.Diagnostics)
+    
+    // Configure uses the provided configuration
+    Configure(cty.Value) tfdiags.Diagnostics
+    
+    // StateMgr returns the state manager for the given workspace
+    StateMgr(workspace string) (statemgr.Full, tfdiags.Diagnostics)
+    
+    // DeleteWorkspace removes the workspace with the given name
+    DeleteWorkspace(name string, force bool) tfdiags.Diagnostics
+    
+    // Workspaces returns a list of workspace names
+    Workspaces() ([]string, tfdiags.Diagnostics)
+}
+```
+
+## Default Workspace
+
+Every backend must have a default workspace named `"default"` (constant `DefaultStateName`). This workspace cannot be deleted.
+
+## Available Backends
+
+Terraform supports the following backends:
+
+### Local Backend
+- **[Local](/backends/local)** - Stores state on the local filesystem
+
+### Cloud Storage Backends
+- **[S3](/backends/s3)** - Amazon S3
+- **[Azure](/backends/azure)** - Azure Blob Storage  
+- **[GCS](/backends/gcs)** - Google Cloud Storage
+- **[OSS](/backends/oss)** - Alibaba Cloud OSS
+- **[COS](/backends/cos)** - Tencent Cloud COS
+- **[OCI](/backends/oci)** - Oracle Cloud Infrastructure Object Storage
+
+### Database Backends
+- **[Consul](/backends/consul)** - HashiCorp Consul
+- **[Postgres](/backends/postgres)** - PostgreSQL database
+
+### Kubernetes Backend
+- **[Kubernetes](/backends/kubernetes)** - Kubernetes secrets
+
+### Generic Backend
+- **[HTTP](/backends/http)** - REST API endpoints
+
+## Choosing a Backend
+
+Consider these factors when selecting a backend:
+
+1. **Team Size** - Remote backends enable collaboration
+2. **Infrastructure** - Use backends compatible with your existing infrastructure
+3. **Security** - Consider encryption, access controls, and compliance requirements
+4. **Reliability** - Ensure high availability and disaster recovery
+5. **Cost** - Evaluate storage and operation costs
+
+## Workspace Support
+
+Most backends support multiple workspaces, allowing you to manage multiple states within a single backend configuration. The HTTP backend does not support workspaces.
+
+## State Locking
+
+State locking prevents concurrent modifications. Most remote backends support state locking:
+
+- **S3** - Uses DynamoDB for locking (legacy) or lock files
+- **Azure** - Uses blob leases
+- **GCS** - No built-in locking
+- **Consul** - Native locking support
+- **Postgres** - Database-level locking
+- **Kubernetes** - Uses Lease objects
+- **HTTP** - Optional locking via custom endpoints
+
+## Configuration
+
+Backends are configured in Terraform configuration files:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "path/to/my/key"
+    region = "us-east-1"
+  }
+}
+```
+
+Configuration options vary by backend type. See individual backend documentation for details.

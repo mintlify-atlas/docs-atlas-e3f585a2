@@ -1,0 +1,115 @@
+---
+title: Introduction to Terraform
+description: Learn about Terraform, the infrastructure as code tool for building, changing, and versioning infrastructure safely and efficiently.
+---
+
+Terraform is a tool for building, changing, and versioning infrastructure safely and efficiently. Terraform can manage existing and popular service providers as well as custom in-house solutions.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started with Terraform in minutes with a simple example
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Terraform on your system and verify the installation
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/core-concepts">
+    Understand Terraform's key concepts and workflow
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/cli-reference">
+    Explore all available Terraform commands and options
+  </Card>
+</CardGroup>
+
+## What is Terraform?
+
+Terraform codifies cloud APIs into declarative configuration files, allowing you to define infrastructure using a high-level configuration syntax. This enables you to version, reuse, and share infrastructure configurations just like application code.
+
+With Terraform, you write configuration files that describe the components needed to run your applications or services. Terraform then generates an execution plan describing what it will do to reach the desired state, and executes that plan to build the infrastructure.
+
+## Key Features
+
+### Infrastructure as Code
+
+Infrastructure is described using a high-level configuration syntax. This allows a blueprint of your datacenter to be versioned and treated as you would any other code. Additionally, infrastructure can be shared and re-used.
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-a1b2c3d4"
+  instance_type = "t2.micro"
+
+  tags = {
+    Name = "WebServer"
+  }
+}
+```
+
+### Execution Plans
+
+Terraform has a "planning" step where it generates an execution plan. The execution plan shows what Terraform will do when you call apply. This lets you avoid any surprises when Terraform manipulates infrastructure.
+
+<Info>
+The `terraform plan` command shows you exactly what changes will be made before you apply them, helping you catch mistakes before they affect your infrastructure.
+</Info>
+
+### Resource Graph
+
+Terraform builds a graph of all your resources, and parallelizes the creation and modification of any non-dependent resources. Because of this, Terraform builds infrastructure as efficiently as possible, and operators get insight into dependencies in their infrastructure.
+
+### Change Automation
+
+Complex changesets can be applied to your infrastructure with minimal human interaction. With the previously mentioned execution plan and resource graph, you know exactly what Terraform will change and in what order, avoiding many possible human errors.
+
+## How Terraform Works
+
+<Steps>
+  <Step title="Write Configuration">
+    Define your infrastructure in `.tf` files using HashiCorp Configuration Language (HCL)
+  </Step>
+  <Step title="Initialize">
+    Run `terraform init` to download providers and initialize the working directory
+  </Step>
+  <Step title="Plan Changes">
+    Run `terraform plan` to preview the changes Terraform will make
+  </Step>
+  <Step title="Apply Changes">
+    Run `terraform apply` to create, update, or delete infrastructure to match your configuration
+  </Step>
+  <Step title="Manage State">
+    Terraform tracks the current state of your infrastructure in a state file
+  </Step>
+</Steps>
+
+## Primary Commands
+
+Terraform's workflow revolves around five primary commands:
+
+- **`init`**: Initialize a Terraform working directory
+- **`validate`**: Validate the Terraform configuration files
+- **`plan`**: Generate and show an execution plan
+- **`apply`**: Build or change infrastructure
+- **`destroy`**: Destroy previously-created infrastructure
+
+## Getting Started
+
+Ready to try Terraform? Head over to our [Quickstart guide](/quickstart) to create your first infrastructure with Terraform in just a few minutes.
+
+<Note>
+Terraform is licensed under the [Business Source License 1.1](https://github.com/hashicorp/terraform/blob/main/LICENSE). Check the license terms for your use case.
+</Note>
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="Terraform Website" icon="globe" href="https://developer.hashicorp.com/terraform">
+    Official Terraform documentation and resources
+  </Card>
+  <Card title="HashiCorp Learn" icon="graduation-cap" href="https://developer.hashicorp.com/terraform/tutorials">
+    Interactive tutorials and learning paths
+  </Card>
+  <Card title="Community Forums" icon="comments" href="https://discuss.hashicorp.com/c/terraform-core">
+    Get help and discuss with the Terraform community
+  </Card>
+  <Card title="Terraform Registry" icon="box" href="https://registry.terraform.io">
+    Browse providers and modules from the community
+  </Card>
+</CardGroup>

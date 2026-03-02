@@ -1,0 +1,191 @@
+---
+title: terraform state push
+description: Update remote state from a local state file.
+---
+
+The `terraform state push` command uploads a local state file to the configured backend, overwriting the remote state.
+
+## Synopsis
+
+Update remote state from a local state file.
+
+## Usage
+
+```bash
+terraform state push [options] PATH
+```
+
+This command "pushes" a local state and overwrites remote state with a local state file. The command will protect you against writing an older serial or a different state file lineage unless you specify the `-force` flag.
+
+This command works with local state (it will overwrite the local state), but is less useful for this use case.
+
+If PATH is "-", then this command will read the state to push from stdin. Data from stdin is not streamed to the backend: it is loaded completely (until pipe close), verified, and then pushed.
+
+## Options
+
+<ParamField path="-force" type="boolean">
+  Write the state even if lineages don't match or the remote serial is higher.
+</ParamField>
+
+<ParamField path="-lock" type="boolean" default="true">
+  Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+</ParamField>
+
+<ParamField path="-lock-timeout" type="duration" default="0s">
+  Duration to retry a state lock.
+</ParamField>
+
+## Arguments
+
+<ParamField path="PATH" type="string" required>
+  Path to the local state file to push. Use "-" to read from stdin.
+</ParamField>
+
+## Examples
+
+### Push a local state file
+
+Push a local state file to the remote backend:
+
+```bash
+terraform state push terraform.tfstate
+```
+
+### Push from stdin
+
+Push state from stdin:
+
+```bash
+cat backup.tfstate | terraform state push -
+```
+
+### Force push
+
+Force push even if the lineage or serial number doesn't match:
+
+```bash
+terraform state push -force terraform.tfstate
+```
+
+**Warning:** Use `-force` with extreme caution as it can overwrite newer state with older state.
+
+### Restore from backup
+
+Restore state from a backup file:
+
+```bash
+terraform state push terraform.tfstate.backup
+```
+
+### Push without locking
+
+Push state without acquiring a lock (not recommended):
+
+```bash
+terraform state push -lock=false terraform.tfstate
+```
+
+### Push with lock timeout
+
+Specify a timeout for acquiring the state lock:
+
+```bash
+terraform state push -lock-timeout=30s terraform.tfstate
+```
+
+## Common Use Cases
+
+### Restore from backup
+
+Restore state after accidental changes or corruption:
+
+```bash
+# Pull current state as backup
+terraform state pull > current-state-backup.tfstate
+
+# Restore from previous backup
+terraform state push terraform.tfstate.backup
+```
+
+### Migrate state to new backend
+
+Move state from one backend to another:
+
+```bash
+# 1. Pull from old backend
+terraform state pull > migration.tfstate
+
+# 2. Update backend configuration in terraform block
+# 3. Initialize new backend
+terraform init
+
+# 4. Push to new backend
+terraform state push migration.tfstate
+```
+
+### Recover from state loss
+
+Recover state if the remote backend loses the state file:
+
+```bash
+terraform state push local-backup.tfstate
+```
+
+### Fix state corruption
+
+Manually edit and repair a corrupted state file, then push it back:
+
+```bash
+# 1. Pull current state
+terraform state pull > broken.tfstate
+
+# 2. Manually fix the JSON
+vim broken.tfstate
+
+# 3. Push corrected state
+terraform state push broken.tfstate
+```
+
+### Sync state after manual editing
+
+After making manual state modifications locally:
+
+```bash
+terraform state push edited-state.tfstate
+```
+
+## Important Notes
+
+- **Dangerous operation:** This overwrites remote state and can cause data loss
+- State lineage and serial number are checked to prevent accidental overwrites
+- Use `-force` only when you're certain you want to overwrite the remote state
+- Always create a backup before pushing state:
+  ```bash
+  terraform state pull > backup-before-push.tfstate
+  ```
+- The state file must be in valid JSON format
+- Pushing state doesn't run any validation of the infrastructure
+- Other team members should not be running Terraform operations during a push
+
+## Safety Checks
+
+Terraform performs several safety checks before pushing state:
+
+1. **Lineage check:** Verifies the state file lineage matches the remote state
+2. **Serial number check:** Ensures the serial number is not lower than the remote state
+3. **State lock:** Acquires a lock to prevent concurrent modifications
+
+These checks can be bypassed with `-force`, but doing so risks:
+- Overwriting newer state with older state
+- Losing recent infrastructure changes
+- Creating state inconsistencies
+
+## When to Use Force
+
+Use `-force` only in specific scenarios:
+- Recovering from a failed migration
+- Restoring from a backup when the remote state is corrupted
+- Fixing state after a backend failure
+- You're certain the local state is the correct version
+
+**Always coordinate with your team before using `-force` in shared environments.**

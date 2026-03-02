@@ -1,0 +1,386 @@
+---
+title: Syntax
+description: Detailed syntax rules for Terraform's HashiCorp Configuration Language (HCL).
+---
+
+# Terraform Configuration Syntax
+
+Terraform configurations are written in HCL (HashiCorp Configuration Language), which is designed to be both human-readable and machine-parseable. This page covers the detailed syntax rules.
+
+## File Extensions
+
+Terraform supports two file formats:
+
+- **`.tf`** - Native HCL syntax (recommended)
+- **`.tf.json`** - JSON syntax for machine generation
+
+<Note>
+This documentation focuses on the native HCL syntax, which is the standard format for human-authored configurations.
+</Note>
+
+## Basic Syntax
+
+### Blocks
+
+Blocks are the primary structural element. A block has a type, optional labels, and a body:
+
+```hcl
+<BLOCK_TYPE> "<LABEL>" "<LABEL>" {
+  # Block body
+  <ARGUMENT> = <EXPRESSION>
+  
+  <NESTED_BLOCK> {
+    # Nested block body
+  }
+}
+```
+
+#### Example
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+  
+  network_interface {
+    device_index = 0
+    description  = "Main network interface"
+  }
+}
+```
+
+In this example:
+- `resource` is the block type
+- `"aws_instance"` and `"web"` are labels
+- `ami` and `instance_type` are arguments
+- `network_interface` is a nested block
+
+### Arguments
+
+Arguments assign values within blocks:
+
+```hcl
+<IDENTIFIER> = <EXPRESSION>
+```
+
+The identifier must be a valid variable name (letters, digits, underscores, and hyphens).
+
+### Identifiers
+
+Valid identifiers:
+- Start with a letter or underscore
+- Contain letters, digits, underscores, and hyphens
+- Are case-sensitive
+
+```hcl
+variable "instance_type" { }    # Valid
+variable "instance-type" { }    # Valid
+variable "_private" { }         # Valid
+variable "2nd_instance" { }     # Invalid - starts with digit
+```
+
+<Warning>
+While hyphens are allowed in identifiers, underscores are preferred for consistency with most programming languages.
+</Warning>
+
+## Expressions
+
+Expressions produce values and can be:
+
+### Literal Values
+
+```hcl
+# String
+name = "example"
+
+# Number
+count = 3
+pi = 3.14159
+
+# Boolean
+enabled = true
+disabled = false
+
+# Null
+default_value = null
+```
+
+### Collections
+
+```hcl
+# List/tuple
+az_list = ["us-west-2a", "us-west-2b", "us-west-2c"]
+
+# Map/object
+tags = {
+  Name        = "example"
+  Environment = "production"
+}
+```
+
+### References
+
+Reference other values in the configuration:
+
+```hcl
+# Resource attribute
+ami = aws_ami.ubuntu.id
+
+# Variable
+instance_type = var.instance_type
+
+# Local value
+subnet_id = local.primary_subnet
+
+# Data source
+vpc_id = data.aws_vpc.main.id
+```
+
+### Operators
+
+Terraform supports standard operators:
+
+```hcl
+# Arithmetic
+result = 2 + 3      # 5
+result = 10 - 4     # 6
+result = 3 * 4      # 12
+result = 10 / 2     # 5
+result = 10 % 3     # 1
+
+# Comparison
+equal = 5 == 5           # true
+not_equal = 5 != 3       # true
+greater = 5 > 3          # true
+greater_or_equal = 5 >= 5 # true
+
+# Logical
+and_op = true && false   # false
+or_op = true || false    # true
+not_op = !false          # true
+```
+
+### Conditional Expressions
+
+```hcl
+instance_type = var.environment == "production" ? "t2.large" : "t2.micro"
+```
+
+### For Expressions
+
+Transform collections:
+
+```hcl
+# List transformation
+uppercase_names = [for name in var.names : upper(name)]
+
+# Map transformation
+port_map = {for k, v in var.ports : k => v + 1000}
+
+# Filtering
+production_instances = [for i in var.instances : i if i.environment == "production"]
+```
+
+### Splat Expressions
+
+Shorthand for extracting attributes:
+
+```hcl
+# Extract all IDs
+instance_ids = aws_instance.web[*].id
+
+# Works with resources created with count
+private_ips = aws_instance.web[*].private_ip
+```
+
+## String Templates
+
+### Interpolation
+
+Embed expressions in strings:
+
+```hcl
+greeting = "Hello, ${var.name}!"
+path = "/var/lib/${var.service}/data"
+```
+
+### Directives
+
+Control whitespace and flow:
+
+```hcl
+# For loop
+user_names = <<EOT
+%{ for name in var.users ~}
+- ${name}
+%{ endfor ~}
+EOT
+
+# Conditional
+config = <<EOT
+%{ if var.debug_mode ~}
+debug = true
+%{ else ~}
+debug = false
+%{ endif ~}
+EOT
+```
+
+### Heredoc Syntax
+
+Multi-line strings:
+
+```hcl
+user_data = <<-EOT
+  #!/bin/bash
+  echo "Hello World"
+  apt-get update
+  apt-get install -y nginx
+EOT
+```
+
+## Comments
+
+Three comment styles:
+
+```hcl
+# Single-line comment (preferred)
+
+// Alternative single-line comment
+
+/*
+  Multi-line comment
+  Useful for larger blocks
+*/
+```
+
+## Special Characters
+
+### Escaping
+
+Escape special characters in strings:
+
+```hcl
+message = "Quote: \"Hello\" and newline: \n"
+path = "C:\\Users\\Admin"
+template = "$${not_interpolated}"
+```
+
+### Unicode
+
+Unicode characters are supported:
+
+```hcl
+variable "π" {
+  default = 3.14159265359
+}
+
+output "emoji" {
+  value = "🚀"
+}
+```
+
+## Style Conventions
+
+<Accordion title="Indentation">
+  Use 2 spaces for indentation (not tabs):
+  
+  ```hcl
+  resource "aws_instance" "example" {
+    ami = "ami-12345678"
+    
+    network_interface {
+      device_index = 0
+    }
+  }
+  ```
+</Accordion>
+
+<Accordion title="Alignment">
+  Align values for better readability:
+  
+  ```hcl
+  resource "aws_instance" "web" {
+    ami           = "ami-12345678"
+    instance_type = "t2.micro"
+    subnet_id     = var.subnet_id
+  }
+  ```
+</Accordion>
+
+<Accordion title="Blank Lines">
+  Use blank lines to separate logical sections:
+  
+  ```hcl
+  variable "region" {
+    type = string
+  }
+  
+  variable "instance_type" {
+    type = string
+  }
+  ```
+</Accordion>
+
+## Formatting
+
+Terraform includes a formatter:
+
+```bash
+# Format current directory
+terraform fmt
+
+# Format specific file
+terraform fmt main.tf
+
+# Check if files are formatted
+terraform fmt -check
+```
+
+## JSON Syntax
+
+For machine-generated configurations:
+
+```json
+{
+  "resource": {
+    "aws_instance": {
+      "web": {
+        "ami": "ami-12345678",
+        "instance_type": "t2.micro"
+      }
+    }
+  }
+}
+```
+
+<Note>
+The JSON syntax is functionally equivalent to HCL but is less human-friendly. Use it only when generating configurations programmatically.
+</Note>
+
+## Validation
+
+The parser validates syntax according to the HCL specification. Common errors include:
+
+- Missing closing braces
+- Invalid identifier names
+- Incorrect expression syntax
+- Mismatched quotes
+
+Use `terraform validate` to check for syntax errors:
+
+```bash
+terraform validate
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Expressions" href="/language/expressions" icon="function">
+    Learn about expression syntax in detail
+  </Card>
+  
+  <Card title="Functions" href="/language/functions" icon="calculator">
+    Explore built-in functions
+  </Card>
+</CardGroup>

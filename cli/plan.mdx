@@ -1,0 +1,239 @@
+---
+title: terraform plan
+description: Generate and show an execution plan
+---
+
+## Synopsis
+
+Show changes required by the current configuration
+
+## Description
+
+The `terraform plan` command generates a speculative execution plan, showing what actions Terraform would take to apply the current configuration. This command will not actually perform the planned actions.
+
+You can optionally save the plan to a file, which you can then pass to the `terraform apply` command to perform exactly the actions described in the plan.
+
+## Usage
+
+```bash
+terraform plan [options]
+```
+
+## Options
+
+### Plan Customization
+
+The following options customize how Terraform will produce its plan. You can also use these options when you run `terraform apply` without passing it a saved plan, in order to plan and apply in a single command.
+
+<ParamField path="-destroy" type="boolean" default="false">
+  Select the "destroy" planning mode, which creates a plan to destroy all objects currently managed by this Terraform configuration instead of the usual behavior.
+</ParamField>
+
+<ParamField path="-refresh-only" type="boolean" default="false">
+  Select the "refresh only" planning mode, which checks whether remote objects still match the outcome of the most recent Terraform apply but does not propose any actions to undo any changes made outside of Terraform.
+</ParamField>
+
+<ParamField path="-refresh" type="boolean" default="true">
+  Skip checking for external changes to remote objects while creating the plan. This can potentially make planning faster, but at the expense of possibly planning against a stale record of the remote system state.
+</ParamField>
+
+<ParamField path="-replace" type="string">
+  Force replacement of a particular resource instance using its resource address. If the plan would've normally produced an update or no-op action for this instance, Terraform will plan to replace it instead. You can use this option multiple times to replace more than one object.
+</ParamField>
+
+<ParamField path="-target" type="string">
+  Limit the planning operation to only the given module, resource, or resource instance and all of its dependencies. You can use this option multiple times to include more than one object. This is for exceptional use only.
+</ParamField>
+
+### Variable Options
+
+<ParamField path="-var" type="string">
+  Set a value for one of the input variables in the root module of the configuration. Use this option more than once to set more than one variable. Format: `-var 'name=value'`
+</ParamField>
+
+<ParamField path="-var-file" type="string">
+  Load variable values from the given file, in addition to the default files `terraform.tfvars` and `*.auto.tfvars`. Use this option more than once to include more than one variables file.
+</ParamField>
+
+### Output Options
+
+<ParamField path="-compact-warnings" type="boolean" default="false">
+  If Terraform produces any warnings that are not accompanied by errors, shows them in a more compact form that includes only the summary messages.
+</ParamField>
+
+<ParamField path="-detailed-exitcode" type="boolean" default="false">
+  Return detailed exit codes when the command exits. This will change the meaning of exit codes to:
+  - 0 = Succeeded, diff is empty (no changes)
+  - 1 = Errored
+  - 2 = Succeeded, there is a diff
+</ParamField>
+
+<ParamField path="-out" type="string">
+  Write a plan file to the given path. This can be used as input to the `terraform apply` command.
+</ParamField>
+
+<ParamField path="-json" type="boolean" default="false">
+  Produce output in a machine-readable JSON format.
+</ParamField>
+
+<ParamField path="-no-color" type="boolean" default="false">
+  If specified, output won't contain any color.
+</ParamField>
+
+### Generation Options
+
+<ParamField path="-generate-config-out" type="string">
+  (Experimental) If import blocks are present in configuration, instructs Terraform to generate HCL for any imported resources not already present. The configuration is written to a new file at the specified path, which must not already exist. Terraform may still attempt to write configuration if the plan errors.
+</ParamField>
+
+### State Management
+
+<ParamField path="-input" type="boolean" default="true">
+  Ask for input for variables if not directly set.
+</ParamField>
+
+<ParamField path="-lock" type="boolean" default="true">
+  Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+</ParamField>
+
+<ParamField path="-lock-timeout" type="duration" default="0s">
+  Duration to retry a state lock. For example: "10s" for 10 seconds.
+</ParamField>
+
+<ParamField path="-parallelism" type="number" default="10">
+  Limit the number of concurrent operations.
+</ParamField>
+
+<ParamField path="-state" type="string">
+  A legacy option used for the local backend only. See the local backend's documentation for more information.
+</ParamField>
+
+## Examples
+
+### Basic Plan
+
+Generate an execution plan:
+
+```bash
+$ terraform plan
+
+Terraform used the selected providers to generate the following execution plan.
+Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # aws_instance.example will be created
+  + resource "aws_instance" "example" {
+      + ami                          = "ami-0c55b159cbfafe1f0"
+      + instance_type                = "t2.micro"
+      + availability_zone            = (known after apply)
+      + id                           = (known after apply)
+      ...
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+```
+
+### Save Plan to File
+
+Save the execution plan to a file:
+
+```bash
+$ terraform plan -out=tfplan
+
+Terraform will perform the following actions:
+  ...
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Saved the plan to: tfplan
+
+To perform exactly these actions, run the following command to apply:
+    terraform apply "tfplan"
+```
+
+### Destroy Plan
+
+Create a plan to destroy all resources:
+
+```bash
+$ terraform plan -destroy
+
+Terraform will perform the following actions:
+
+  # aws_instance.example will be destroyed
+  - resource "aws_instance" "example" {
+      - ami                          = "ami-0c55b159cbfafe1f0" -> null
+      - instance_type                = "t2.micro" -> null
+      ...
+    }
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+```
+
+### Target Specific Resources
+
+Plan changes for specific resources only:
+
+```bash
+$ terraform plan -target=aws_instance.example
+
+Terraform will perform the following actions:
+
+  # aws_instance.example will be created
+  + resource "aws_instance" "example" {
+      ...
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+```
+
+### Force Replacement
+
+Force replacement of a specific resource:
+
+```bash
+$ terraform plan -replace=aws_instance.example
+
+Terraform will perform the following actions:
+
+  # aws_instance.example will be replaced
+-/+ resource "aws_instance" "example" {
+      ~ id                           = "i-1234567890abcdef0" -> (known after apply)
+      ...
+    }
+
+Plan: 1 to add, 0 to change, 1 to destroy.
+```
+
+### Set Variables
+
+Plan with variable values:
+
+```bash
+$ terraform plan -var="instance_type=t3.small" -var-file="prod.tfvars"
+```
+
+### Detailed Exit Codes
+
+Use detailed exit codes (useful for CI/CD):
+
+```bash
+$ terraform plan -detailed-exitcode
+$ echo $?
+2  # Exit code 2 means there are changes
+```
+
+## Exit Codes
+
+### Default Mode
+
+- `0` - Success
+- `1` - Error occurred
+
+### With `-detailed-exitcode`
+
+- `0` - Succeeded, diff is empty (no changes)
+- `1` - Error occurred
+- `2` - Succeeded, there is a diff (changes present)

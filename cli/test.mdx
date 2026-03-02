@@ -1,0 +1,98 @@
+---
+title: terraform test
+description: The terraform test command executes automated integration tests for Terraform modules.
+---
+
+# Command: test
+
+The `terraform test` command executes automated integration tests against the current Terraform configuration.
+
+## Usage
+
+```bash
+terraform test [options]
+```
+
+Terraform will search for `.tftest.hcl` files within the current configuration and testing directories. Terraform will then execute the testing run blocks within any testing files in order, and verify conditional checks and assertions against the created infrastructure.
+
+<Warning>
+This command creates real infrastructure and will attempt to clean up the testing infrastructure on completion. Monitor the output carefully to ensure this cleanup process is successful.
+</Warning>
+
+## Options
+
+- `-cloud-run=source` - If specified, Terraform will execute this test run remotely using HCP Terraform or Terraform Enterprise. You must specify the source of a module registered in a private module registry as the argument to this flag. This allows Terraform to associate the cloud run with the correct HCP Terraform or Terraform Enterprise module and organization.
+
+- `-filter=testfile` - If specified, Terraform will only execute the test files specified by this flag. You can use this option multiple times to execute more than one test file.
+
+- `-json` - If specified, machine readable output will be printed in JSON format.
+
+- `-junit-xml=path` - Saves a test report in JUnit XML format to the specified file. This is currently incompatible with remote test execution using the `-cloud-run` option. The file path must be relative or absolute.
+
+- `-no-color` - If specified, output won't contain any color.
+
+- `-parallelism=n` - Limit the number of concurrent operations within the plan/apply operation of a test run. Defaults to 10.
+
+- `-test-directory=path` - Set the Terraform test directory. Defaults to `"tests"`.
+
+- `-var 'NAME=VALUE'` - Set a value for one of the input variables in the root module of the configuration. Use this option multiple times to set more than one variable.
+
+- `-var-file=FILENAME` - Load variable values from the given file, in addition to the default files `terraform.tfvars` and `*.auto.tfvars`. Use this option multiple times to include more than one variables file.
+
+- `-verbose` - Print the plan or state for each test run block as it executes.
+
+## Test File Structure
+
+Test files use the `.tftest.hcl` extension and contain one or more `run` blocks. Each `run` block represents a test case.
+
+Example test file:
+
+```hcl
+run "test_instance" {
+  command = plan
+
+  assert {
+    condition     = aws_instance.example.instance_type == "t2.micro"
+    error_message = "Instance type must be t2.micro"
+  }
+}
+
+run "test_apply" {
+  command = apply
+
+  assert {
+    condition     = aws_instance.example.ami != ""
+    error_message = "AMI must be set"
+  }
+}
+```
+
+## Test Directory
+
+By default, Terraform looks for test files in a `tests/` directory relative to your configuration. You can customize this location using the `-test-directory` flag.
+
+## Examples
+
+Run all tests:
+
+```bash
+terraform test
+```
+
+Run specific test files:
+
+```bash
+terraform test -filter=example.tftest.hcl
+```
+
+Run tests with verbose output:
+
+```bash
+terraform test -verbose
+```
+
+Run tests and generate JUnit XML report:
+
+```bash
+terraform test -junit-xml=test-results.xml
+```

@@ -1,0 +1,248 @@
+---
+title: State Management Overview
+description: Understanding Terraform's state management system, state file structure, and core concepts
+---
+
+## Overview
+
+Terraform state is a critical component that tracks the resources managed by your infrastructure as code. The state system provides a mapping between your configuration files and the real-world resources they represent.
+
+## What is Terraform State?
+
+Terraform state is a JSON file that stores information about your managed infrastructure and configuration. It serves as the source of truth for Terraform to understand what resources exist, their current attributes, and relationships between them.
+
+### Key Functions
+
+- **Resource Tracking**: Maps configuration to real-world resources
+- **Metadata Storage**: Stores resource metadata and dependencies
+- **Performance Optimization**: Caches resource attributes to avoid unnecessary API calls
+- **Collaboration**: Enables team collaboration through shared state
+
+## State Data Structure
+
+Terraform's state is organized hierarchically using several core data structures defined in `internal/states/`:
+
+### State Object
+
+The top-level `State` type represents the entire state file:
+
+```go
+// From internal/states/state.go:27
+type State struct {
+    // Modules contains the state for each module
+    Modules map[string]*Module
+    
+    // RootOutputValues contains output values from the root module
+    RootOutputValues map[string]*OutputValue
+    
+    // CheckResults contains health check snapshots
+    CheckResults *CheckResults
+}
+```
+
+**Reference**: `internal/states/state.go:27-52`
+
+### Module State
+
+Each module instance has its own state container:
+
+```go
+// From internal/states/module.go:11
+type Module struct {
+    Addr addrs.ModuleInstance
+    
+    // Resources contains the state for each resource
+    Resources map[string]*Resource
+}
+```
+
+**Reference**: `internal/states/module.go:11-17`
+
+### Resource State
+
+Resources track provider configuration and instances:
+
+```go
+// From internal/states/resource.go:13
+type Resource struct {
+    Addr addrs.AbsResource
+    
+    // Instances contains potentially-multiple instances
+    Instances map[addrs.InstanceKey]*ResourceInstance
+    
+    // ProviderConfig links to the managing provider
+    ProviderConfig addrs.AbsProviderConfig
+}
+```
+
+**Reference**: `internal/states/resource.go:13-29`
+
+### Resource Instance Objects
+
+Each resource instance contains current and deposed objects:
+
+```go
+// From internal/states/resource.go:59
+type ResourceInstance struct {
+    // Current is the active remote object
+    Current *ResourceInstanceObjectSrc
+    
+    // Deposed contains replaced objects pending destruction
+    Deposed map[DeposedKey]*ResourceInstanceObjectSrc
+}
+```
+
+**Reference**: `internal/states/resource.go:59-69`
+
+### Instance Object Details
+
+The actual resource data is stored in `ResourceInstanceObject`:
+
+```go
+// From internal/states/instance_object.go:26
+type ResourceInstanceObject struct {
+    Value cty.Value           // The resource attributes
+    Identity cty.Value        // Resource identity information
+    Private []byte            // Provider-specific private data
+    Status ObjectStatus       // Ready, Tainted, or Planned
+    Dependencies []addrs.ConfigResource
+    CreateBeforeDestroy bool
+}
+```
+
+**Reference**: `internal/states/instance_object.go:26-58`
+
+## Object Status Values
+
+Resource objects can have three status states:
+
+- **`ObjectReady` ('R')**: Object is ready to use
+- **`ObjectTainted` ('T')**: Object is in a bad state and must be replaced
+- **`ObjectPlanned` ('P')**: Placeholder for planned but not yet created objects
+
+**Reference**: `internal/states/instance_object.go:85-105`
+
+## State Synchronization
+
+For concurrent access, Terraform provides `SyncState` wrapper:
+
+```go
+// From internal/states/sync.go:36
+type SyncState struct {
+    state    *State
+    writable bool
+    lock     sync.RWMutex
+}
+```
+
+The `SyncState` wrapper ensures thread-safe state operations during graph walks and other concurrent operations.
+
+**Reference**: `internal/states/sync.go:36-40`
+
+### Key Methods
+
+- `SetResourceInstanceCurrent()`: Updates the current object for an instance
+- `DeposeResourceInstanceObject()`: Moves current object to deposed
+- `ForgetResourceInstanceAll()`: Removes all objects for an instance
+- `Lock()`/`Unlock()`: Provides explicit locking for batch operations
+
+**Reference**: `internal/states/sync.go:214-482`
+
+## State Mutability Rules
+
+<Warning>
+State should only be mutated through accessor methods to preserve invariants. Direct field modification can corrupt state integrity.
+</Warning>
+
+### Concurrency Safety
+
+From `internal/states/state.go:20-26`:
+
+> Access to State and the nested values within it is not concurrency-safe, so when accessing a State object concurrently it is the caller's responsibility to ensure that only one write is in progress at a time and that reads only occur when no write is in progress.
+
+**Solution**: Use `SyncState` wrapper for concurrent access patterns.
+
+## State Operations
+
+### Creating Empty State
+
+```go
+// From internal/states/state.go:55
+state := states.NewState()
+```
+
+Creates a minimal state with an empty root module.
+
+### Checking if State is Empty
+
+```go
+// From internal/states/state.go:76
+if state.Empty() {
+    // No resources or output values
+}
+```
+
+**Reference**: `internal/states/state.go:76-89`
+
+### Moving Resources
+
+The state package provides methods for moving resources between addresses:
+
+- `MoveAbsResource()`: Move an entire resource
+- `MoveAbsResourceInstance()`: Move a single instance
+- `MoveModuleInstance()`: Move an entire module
+
+**Reference**: `internal/states/state.go:418-604`
+
+## State Encoding
+
+Resource instance objects are encoded to `ResourceInstanceObjectSrc` for persistence:
+
+```go
+// From internal/states/instance_object.go:120
+func (o *ResourceInstanceObject) Encode(schema providers.Schema) (*ResourceInstanceObjectSrc, error)
+```
+
+This handles:
+- Removing sensitive marks
+- Converting unknown values to null
+- Marshaling to JSON
+- Sorting dependencies for stable output
+
+**Reference**: `internal/states/instance_object.go:120-180`
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Accessor Methods">
+    Always use the provided accessor methods rather than directly modifying state fields. This ensures invariants are maintained.
+  </Accordion>
+  
+  <Accordion title="Handle Concurrency Properly">
+    Wrap state in `SyncState` for concurrent operations. Use explicit `Lock()`/`Unlock()` only when necessary.
+  </Accordion>
+  
+  <Accordion title="Validate Module Addresses">
+    The root module cannot be removed from state. Always check `addr.IsRoot()` before removal operations.
+  </Accordion>
+  
+  <Accordion title="Prune Empty Modules">
+    State automatically prunes empty non-root modules to maintain cleanliness.
+  </Accordion>
+</AccordionGroup>
+
+## Related Resources
+
+- [State Backends](/state/backends) - Backend configuration and remote state
+- [Remote State](/state/remote-state) - Working with remote state data sources
+- [State Locking](/state/locking) - Understanding state locking mechanisms
+- [State Commands](/state/manipulation) - CLI commands for state manipulation
+
+## Source Code References
+
+- **Core State**: `internal/states/state.go`
+- **Module State**: `internal/states/module.go`
+- **Resource State**: `internal/states/resource.go`
+- **Instance Objects**: `internal/states/instance_object.go`
+- **Synchronization**: `internal/states/sync.go`
+- **Package Documentation**: `internal/states/doc.go`

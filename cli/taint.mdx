@@ -1,0 +1,72 @@
+---
+title: terraform taint
+description: The terraform taint command marks a resource instance as not fully functional, forcing it to be destroyed and recreated on the next apply.
+---
+
+# Command: taint
+
+<Warning>
+The `terraform taint` command is deprecated. For Terraform v0.15.2 and later, we recommend using the `-replace` option with `terraform apply` instead.
+</Warning>
+
+The `terraform taint` command informs Terraform that a particular object has become degraded or damaged. Terraform will propose to replace it in the next plan you create.
+
+## Usage
+
+```bash
+terraform taint [options] address
+```
+
+Terraform uses the term "tainted" to describe a resource instance which may not be fully functional, either because its creation partially failed or because you've manually marked it as such using this command.
+
+This will not modify your infrastructure directly, but subsequent Terraform plans will include actions to destroy the remote object and create a new object to replace it.
+
+You can remove the "taint" state from a resource instance using the [`terraform untaint`](/terraform/cli/commands/untaint) command.
+
+The address must be a valid [resource address](/terraform/cli/state/resource-addressing), such as:
+
+- `aws_instance.foo`
+- `aws_instance.bar[1]`
+- `module.foo.module.bar.aws_instance.baz`
+
+## Options
+
+- `-allow-missing` - If specified, the command will succeed (exit code 0) even if the resource is missing. By default, this is an error because the address may be incorrect.
+
+- `-lock=false` - Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+
+- `-lock-timeout=DURATION` - Duration to retry a state lock. Default is `0s`.
+
+- `-ignore-remote-version` - A rare option used for the remote backend only. See the [remote backend documentation](/terraform/language/settings/backends/remote) for more information.
+
+For configurations using the [local backend](/terraform/language/settings/backends/local) only, `terraform taint` also accepts the legacy options `-state`, `-state-out`, and `-backup`.
+
+## Example
+
+Mark a single instance as tainted:
+
+```bash
+terraform taint aws_instance.example
+```
+
+Mark a specific instance in a resource with count:
+
+```bash
+terraform taint 'aws_instance.example[0]'
+```
+
+Mark a resource in a module:
+
+```bash
+terraform taint module.web_app.aws_instance.server
+```
+
+## Recommended Alternative: -replace
+
+Instead of using `terraform taint`, we recommend using the `-replace` option with `terraform apply`:
+
+```bash
+terraform apply -replace="aws_instance.example"
+```
+
+This accomplishes the same goal but allows you to preview the changes in the plan before applying them, providing better visibility and control.

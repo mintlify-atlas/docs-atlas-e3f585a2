@@ -1,0 +1,138 @@
+---
+title: terraform workspace show
+description: The terraform workspace show command displays the name of the current workspace.
+---
+
+# terraform workspace show
+
+The `terraform workspace show` command displays the name of the current workspace.
+
+## Usage
+
+```bash
+terraform [global options] workspace show
+```
+
+## Description
+
+This command outputs the name of the currently selected workspace to standard output. It's useful for scripting and automation where you need to determine which workspace is active.
+
+## Example Output
+
+```bash
+terraform workspace show
+```
+
+Output:
+```
+production
+```
+
+## Options
+
+This command accepts no command-specific options. Only [global options](/cli/commands) are available.
+
+## Usage in Scripts
+
+The `workspace show` command is particularly useful in shell scripts and CI/CD pipelines:
+
+```bash
+#!/bin/bash
+
+# Get the current workspace
+CURRENT_WORKSPACE=$(terraform workspace show)
+
+if [ "$CURRENT_WORKSPACE" = "production" ]; then
+  echo "Running in production workspace"
+  # Apply additional safety checks
+else
+  echo "Running in $CURRENT_WORKSPACE workspace"
+fi
+```
+
+## Workspace Override Behavior
+
+The command reflects the actual workspace being used, including when overridden by the `TF_WORKSPACE` environment variable:
+
+```bash
+export TF_WORKSPACE=staging
+terraform workspace show
+```
+
+Output:
+```
+staging
+```
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error (e.g., failed to determine workspace)
+
+## Use Cases
+
+### Conditional Deployment
+
+Use workspace information to control deployment behavior:
+
+```bash
+WORKSPACE=$(terraform workspace show)
+
+if [ "$WORKSPACE" = "production" ]; then
+  terraform apply -var="instance_count=10"
+else
+  terraform apply -var="instance_count=2"
+fi
+```
+
+### Environment Validation
+
+Validate that you're in the correct workspace before applying changes:
+
+```bash
+EXPECTED_WORKSPACE="production"
+CURRENT_WORKSPACE=$(terraform workspace show)
+
+if [ "$CURRENT_WORKSPACE" != "$EXPECTED_WORKSPACE" ]; then
+  echo "Error: Expected workspace '$EXPECTED_WORKSPACE' but currently in '$CURRENT_WORKSPACE'"
+  exit 1
+fi
+
+terraform apply
+```
+
+### CI/CD Integration
+
+Determine workspace from branch name and verify:
+
+```bash
+# In CI/CD pipeline
+BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+
+case $BRANCH_NAME in
+  main)
+    EXPECTED_WORKSPACE="production"
+    ;;
+  develop)
+    EXPECTED_WORKSPACE="development"
+    ;;
+  *)
+    EXPECTED_WORKSPACE="feature"
+    ;;
+esac
+
+terraform workspace select $EXPECTED_WORKSPACE
+
+# Verify workspace selection
+if [ "$(terraform workspace show)" != "$EXPECTED_WORKSPACE" ]; then
+  echo "Failed to select correct workspace"
+  exit 1
+fi
+```
+
+## Related Commands
+
+- [terraform workspace list](/cli/workspace-list) - List all workspaces
+- [terraform workspace select](/cli/workspace-select) - Switch to a different workspace
+- [terraform workspace new](/cli/workspace-new) - Create a new workspace
+- [terraform workspace delete](/cli/workspace-delete) - Delete a workspace

@@ -1,0 +1,132 @@
+---
+title: terraform workspace new
+description: The terraform workspace new command creates a new workspace.
+---
+
+# terraform workspace new
+
+The `terraform workspace new` command creates a new workspace and switches to it.
+
+## Usage
+
+```bash
+terraform [global options] workspace new [OPTIONS] NAME
+```
+
+## Description
+
+This command creates a new workspace with the specified name and automatically switches to it. Each workspace maintains its own state file, allowing you to manage multiple distinct infrastructure configurations from the same Terraform code.
+
+When a workspace is created, it starts with an empty state. You can optionally copy state from an existing state file using the `-state` option.
+
+## Arguments
+
+- `NAME` - (Required) The name of the workspace to create. Must be a valid workspace name containing only URL-safe characters with no path separators.
+
+## Options
+
+- `-lock=true` - Lock the state file during the operation. Set to `false` to disable locking. Default: `true`
+  
+  <Warning>
+  Setting `-lock=false` is dangerous if others might concurrently run commands against the same workspace.
+  </Warning>
+
+- `-lock-timeout=0s` - Duration to wait for a state lock to be released before timing out. Accepts values like `10s` or `5m`. Default: `0s` (no retry)
+
+- `-state=path` - Path to an existing state file to copy into the new workspace. This allows you to create a new workspace based on existing infrastructure state.
+
+## Examples
+
+### Create a New Workspace
+
+```bash
+terraform workspace new development
+```
+
+Output:
+```
+Created and switched to workspace "development"!
+
+You're now on a new, empty workspace. Workspaces isolate their state,
+so if you run "terraform plan" Terraform will not see any existing state
+for this configuration.
+```
+
+### Create a Workspace from an Existing State File
+
+```bash
+terraform workspace new staging -state=terraform.tfstate.backup
+```
+
+This creates a new workspace called `staging` and initializes it with the state from `terraform.tfstate.backup`.
+
+### Create with Custom Lock Timeout
+
+```bash
+terraform workspace new production -lock-timeout=30s
+```
+
+This waits up to 30 seconds for a state lock to be released before timing out.
+
+## Behavior Notes
+
+### Workspace Already Exists
+
+If you attempt to create a workspace that already exists, the command will fail:
+
+```
+Workspace "development" already exists
+```
+
+### Workspace Override
+
+You cannot create a workspace when the `TF_WORKSPACE` environment variable is set to a different workspace name. The command will fail with:
+
+```
+The workspace is currently overridden using the TF_WORKSPACE environment
+variable. You cannot create a new workspace when using this setting.
+
+To create a new workspace, either unset this environment variable or update it
+to match the workspace name you are trying to create, and then run this command
+again.
+```
+
+However, if `TF_WORKSPACE` is set to the same name as the workspace you're creating, the command will succeed.
+
+### Invalid Workspace Names
+
+Workspace names must:
+- Not be empty
+- Contain only URL-safe characters
+- Not contain path separators
+- Not require URL encoding
+
+If you provide an invalid name, the command will fail:
+
+```
+The workspace name "my workspace" is not allowed. The name must contain only URL safe
+characters, contain no path separators, and not be an empty string.
+```
+
+### State File Copying
+
+When using the `-state` option:
+1. The new workspace is created first
+2. State locking is acquired (unless `-lock=false`)
+3. The state file is read and validated
+4. The state is written to the new workspace
+5. The lock is released
+
+If any step fails, the command returns an error.
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error (e.g., workspace already exists, invalid name, failed to load backend, state file errors)
+
+## Related Commands
+
+- [terraform workspace list](/cli/workspace-list) - List all workspaces
+- [terraform workspace select](/cli/workspace-select) - Switch to a different workspace
+- [terraform workspace show](/cli/workspace-show) - Show the current workspace name
+- [terraform workspace delete](/cli/workspace-delete) - Delete a workspace

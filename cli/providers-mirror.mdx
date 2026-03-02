@@ -1,0 +1,283 @@
+---
+title: terraform providers mirror
+description: The terraform providers mirror command saves local copies of all required provider plugins.
+---
+
+# Command: providers mirror
+
+The `terraform providers mirror` command downloads provider plugins required by the current configuration and saves them to a local directory.
+
+## Usage
+
+```bash
+terraform providers mirror [options] <target-dir>
+```
+
+## Description
+
+This command populates a local directory with copies of the provider plugins needed for the current configuration. The resulting directory can be used either:
+
+- **Directly as a filesystem mirror** - Configure Terraform to install providers from this local directory
+- **As the basis for a network mirror** - Publish the directory contents on an HTTP server for remote access
+
+The mirror directory will contain JSON index files that can be published along with the mirrored packages on a static HTTP file server to produce a network mirror. These index files are ignored if the directory is used as a local filesystem mirror.
+
+## Arguments
+
+- `<target-dir>` **(required)** - The directory path where provider packages should be saved.
+
+## Options
+
+### Platform Options
+
+- `-platform=os_arch` - Choose which target platform to build a mirror for.
+
+  By default, Terraform obtains plugin packages suitable only for the platform where you run this command. Use this flag multiple times to include packages for multiple target systems.
+
+  Target names consist of an operating system and a CPU architecture. For example, `linux_amd64` selects the Linux operating system running on an AMD64 or x86_64 CPU.
+
+  **Common platforms**:
+  - `linux_amd64` - Linux on AMD64/x86_64
+  - `linux_arm64` - Linux on ARM64
+  - `darwin_amd64` - macOS on Intel processors
+  - `darwin_arm64` - macOS on Apple Silicon (M1/M2/M3)
+  - `windows_amd64` - Windows on AMD64/x86_64
+
+  Each provider is available only for a limited set of target platforms.
+
+### Lock File Options
+
+- `-lock-file=false` - Ignore the provider lock file when fetching providers.
+
+  By default (when `-lock-file=true`), the mirror command uses the version information in the lock file if the configuration directory has been previously initialized. This ensures the mirrored versions match what's already locked.
+
+  Set to `false` to select the newest available version matching the configuration's version constraints instead.
+
+## Behavior
+
+The command:
+
+1. Reads the current configuration to determine provider requirements
+2. Checks the dependency lock file (if present and `-lock-file` is not disabled)
+3. Validates lock file against configuration requirements
+4. For each required provider:
+   - Queries the origin registry for available versions
+   - Selects the appropriate version (from lock file or newest matching constraints)
+   - Downloads packages for each specified platform
+   - Authenticates packages using registry signatures
+   - Saves packages to the target directory
+5. Generates JSON index files for network mirror compatibility
+
+### Version Selection
+
+The command selects provider versions using this logic:
+
+- If a lock file exists and `-lock-file=true` (default): Uses the locked version
+- Otherwise: Uses the newest version matching the configuration's version constraints
+- If no constraints are specified: Uses the newest available version
+
+### Package Authentication
+
+For each downloaded package, Terraform:
+
+- Verifies the package against registry-provided checksums
+- Validates cryptographic signatures when available
+- Reports the authentication result (e.g., "signed by HashiCorp")
+
+## Output Files
+
+The command creates a directory structure compatible with both filesystem and network mirrors:
+
+```
+target-dir/
+└── registry.terraform.io/
+    └── hashicorp/
+        └── aws/
+            ├── index.json
+            ├── 5.31.0.json
+            ├── terraform-provider-aws_5.31.0_linux_amd64.zip
+            ├── terraform-provider-aws_5.31.0_darwin_amd64.zip
+            └── terraform-provider-aws_5.31.0_darwin_arm64.zip
+```
+
+### Index Files
+
+JSON index files are generated for network mirror compatibility:
+
+- `index.json` - Lists all available versions for a provider
+- `<version>.json` - Lists all platforms and download URLs for a specific version
+
+These files are used by `terraform init` when configured to use a network mirror, but are ignored for filesystem mirrors.
+
+## Examples
+
+### Basic Mirror for Current Platform
+
+Create a mirror with providers for the current platform:
+
+```bash
+terraform providers mirror ./mirror
+```
+
+### Multi-Platform Mirror
+
+Create a mirror supporting Linux, macOS (both Intel and Apple Silicon), and Windows:
+
+```bash
+terraform providers mirror \
+  -platform=linux_amd64 \
+  -platform=linux_arm64 \
+  -platform=darwin_amd64 \
+  -platform=darwin_arm64 \
+  -platform=windows_amd64 \
+  ./mirror
+```
+
+### Mirror Without Lock File
+
+Create a mirror using the newest available versions instead of locked versions:
+
+```bash
+terraform providers mirror -lock-file=false ./mirror
+```
+
+### Mirror for Production
+
+Create a comprehensive production mirror:
+
+```bash
+terraform providers mirror \
+  -platform=linux_amd64 \
+  -platform=linux_arm64 \
+  /opt/terraform/providers
+```
+
+## Output Example
+
+```
+- Mirroring hashicorp/aws...
+  - Selected v5.31.0 to match dependency lock file
+  - Downloading package for linux_amd64...
+  - Package authenticated: signed by HashiCorp
+  - Downloading package for darwin_arm64...
+  - Package authenticated: signed by HashiCorp
+- Mirroring hashicorp/random...
+  - Selected v3.6.0 to match dependency lock file
+  - Downloading package for linux_amd64...
+  - Package authenticated: signed by HashiCorp
+  - Downloading package for darwin_arm64...
+  - Package authenticated: signed by HashiCorp
+```
+
+## Use Cases
+
+### Offline Environments
+
+Create a provider mirror for use in air-gapped or restricted network environments:
+
+1. On a machine with internet access:
+   ```bash
+   terraform providers mirror -platform=linux_amd64 ./providers
+   ```
+
+2. Transfer the `./providers` directory to the offline environment
+
+3. Configure Terraform to use the filesystem mirror in `~/.terraformrc`:
+   ```hcl
+   provider_installation {
+     filesystem_mirror {
+       path    = "/path/to/providers"
+       include = ["*/*"]
+     }
+     direct {
+       exclude = ["*/*"]
+     }
+   }
+   ```
+
+### Network Mirror Setup
+
+Create a network mirror to share providers across a team:
+
+1. Create the mirror:
+   ```bash
+   terraform providers mirror \
+     -platform=linux_amd64 \
+     -platform=darwin_arm64 \
+     /var/www/terraform/providers
+   ```
+
+2. Serve the directory via HTTPS (e.g., using nginx, Apache, or a cloud storage service)
+
+3. Configure team members to use the network mirror:
+   ```hcl
+   provider_installation {
+     network_mirror {
+       url = "https://terraform.example.com/providers/"
+     }
+   }
+   ```
+
+### CI/CD Pipeline Optimization
+
+Cache providers in CI/CD to speed up deployments:
+
+```bash
+# In a CI pipeline setup step
+terraform providers mirror \
+  -platform=linux_amd64 \
+  $CI_PROJECT_DIR/.terraform/providers
+```
+
+### Disaster Recovery
+
+Maintain a backup of critical provider versions:
+
+```bash
+terraform providers mirror \
+  -platform=linux_amd64 \
+  -platform=linux_arm64 \
+  /backups/terraform-providers/$(date +%Y-%m-%d)
+```
+
+## Using the Mirror
+
+### Filesystem Mirror
+
+Configure Terraform to use a local filesystem mirror in `~/.terraformrc` or `.terraformrc`:
+
+```hcl
+provider_installation {
+  filesystem_mirror {
+    path    = "/path/to/mirror"
+    include = ["registry.terraform.io/*/*"]
+  }
+}
+```
+
+### Network Mirror
+
+Configure Terraform to use a network mirror:
+
+```hcl
+provider_installation {
+  network_mirror {
+    url     = "https://terraform-mirror.example.com/"
+    include = ["registry.terraform.io/*/*"]
+  }
+}
+```
+
+## Important Notes
+
+- The command always consults the origin registry, even if you have a local mirror configured in your CLI configuration. This ensures the mirror is populated with authentic packages.
+- Downloaded packages are authenticated using registry signatures before being saved.
+- The command does not optimize for packages already present; it always downloads everything required.
+- Run this command periodically to keep your mirror up to date with new provider versions.
+
+## Related Commands
+
+- [`terraform providers lock`](/cli/providers-lock) - Generate lock file with checksums
+- [`terraform providers`](/cli/providers) - Show provider requirements
+- [`terraform init`](/cli/init) - Initialize and download providers
+- [`terraform providers schema`](/cli/providers-schema) - Show provider schemas

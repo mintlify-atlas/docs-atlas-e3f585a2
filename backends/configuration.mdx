@@ -1,0 +1,228 @@
+---
+title: Backend Configuration
+description: Configure Terraform backends for state storage.
+---
+
+# Backend Configuration
+
+This page covers general backend configuration principles and patterns used across all Terraform backends.
+
+## Configuration Lifecycle
+
+Backends follow a three-phase configuration lifecycle:
+
+### 1. Schema Definition
+
+The `ConfigSchema()` method returns a schema describing expected configuration:
+
+```go
+func (b *Backend) ConfigSchema() *configschema.Block {
+    return &configschema.Block{
+        Attributes: map[string]*configschema.Attribute{
+            "bucket": {
+                Type:        cty.String,
+                Required:    true,
+                Description: "The name of the storage bucket",
+            },
+            // Additional attributes...
+        },
+    }
+}
+```
+
+### 2. Validation
+
+The `PrepareConfig()` method validates configuration values:
+
+```go
+func (b *Backend) PrepareConfig(obj cty.Value) (cty.Value, tfdiags.Diagnostics) {
+    var diags tfdiags.Diagnostics
+    
+    // Validate required fields
+    if val := obj.GetAttr("bucket"); val.IsNull() {
+        diags = diags.Append(requiredAttributeError("bucket"))
+    }
+    
+    return obj, diags
+}
+```
+
+### 3. Configuration
+
+The `Configure()` method applies the validated configuration:
+
+```go
+func (b *Backend) Configure(obj cty.Value) tfdiags.Diagnostics {
+    b.bucketName = obj.GetAttr("bucket").AsString()
+    // Initialize client, set up resources, etc.
+    return nil
+}
+```
+
+## Common Configuration Patterns
+
+### Environment Variables
+
+Many backends support environment variable fallbacks:
+
+```go
+SDKLikeDefaults: backendbase.SDKLikeDefaults{
+    "region": {
+        EnvVars:  []string{"AWS_REGION", "AWS_DEFAULT_REGION"},
+        Fallback: "",
+    },
+}
+```
+
+### Required vs Optional Attributes
+
+Attributes can be marked as required or optional:
+
+```go
+"bucket": {
+    Type:        cty.String,
+    Required:    true,  // Must be provided
+    Description: "The name of the bucket",
+},
+"prefix": {
+    Type:        cty.String,
+    Optional:    true,  // Can be omitted
+    Description: "Path prefix for state files",
+},
+```
+
+### Sensitive Attributes
+
+Mark sensitive data to prevent exposure in logs:
+
+```go
+"access_key": {
+    Type:        cty.String,
+    Optional:    true,
+    Sensitive:   true,  // Will be redacted in output
+    Description: "Access key for authentication",
+},
+```
+
+### Deprecated Attributes
+
+Mark attributes as deprecated:
+
+```go
+"endpoint": {
+    Type:        cty.String,
+    Optional:    true,
+    Deprecated:  true,
+    Description: "Deprecated in favor of 'endpoints' block",
+},
+```
+
+## Attribute Types
+
+Backends support various attribute types:
+
+- **String** - `cty.String`
+- **Boolean** - `cty.Bool`
+- **Number** - `cty.Number`
+- **List** - `cty.List(elementType)`
+- **Set** - `cty.Set(elementType)`
+- **Map** - `cty.Map(elementType)`
+
+## Nested Blocks
+
+Some backends use nested configuration blocks:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-bucket"
+    
+    assume_role {
+      role_arn     = "arn:aws:iam::123456789012:role/MyRole"
+      session_name = "terraform"
+    }
+  }
+}
+```
+
+Defined in schema as:
+
+```go
+"assume_role": {
+    NestedType: &configschema.Object{
+        Nesting: configschema.NestingSingle,
+        Attributes: map[string]*configschema.Attribute{
+            "role_arn": {...},
+            "session_name": {...},
+        },
+    },
+}
+```
+
+## Validation Patterns
+
+### String Validation
+
+Common string validations:
+
+```go
+// Non-empty string
+if v := obj.GetAttr("key"); !v.IsNull() && v.AsString() == "" {
+    diags = diags.Append(error("key must not be empty"))
+}
+
+// Path validation
+if strings.HasPrefix(key, "/") || strings.HasSuffix(key, "/") {
+    diags = diags.Append(error("key cannot start or end with '/'"))
+}
+```
+
+### Mutual Exclusivity
+
+Ensure only one of multiple options is set:
+
+```go
+if !kmsKey.IsNull() && !customerKey.IsNull() {
+    diags = diags.Append(error(
+        "Only one of kms_key_id or sse_customer_key can be set"
+    ))
+}
+```
+
+### Required Dependencies
+
+Validate dependent attributes:
+
+```go
+if !clientCert.IsNull() && privateKey.IsNull() {
+    diags = diags.Append(error(
+        "private_key is required when client_certificate is set"
+    ))
+}
+```
+
+## Default Values
+
+Defaults can be specified at multiple levels:
+
+1. **Schema-level defaults** (via `SDKLikeDefaults`)
+2. **Environment variable defaults**
+3. **Hard-coded fallbacks**
+
+```go
+path := backendbase.GetAttrEnvDefaultFallback(
+    configVal, "path",           // Attribute name
+    "TF_STATE_PATH",              // Environment variable
+    cty.StringVal("terraform.tfstate"),  // Final fallback
+)
+```
+
+## Best Practices
+
+1. **Validate early** - Catch configuration errors in `PrepareConfig()`
+2. **Clear error messages** - Include the attribute path and helpful context
+3. **Support environment variables** - Enable CI/CD and automation
+4. **Document all attributes** - Provide clear descriptions
+5. **Use sensible defaults** - Minimize required configuration
+6. **Mark sensitive data** - Protect credentials and secrets
+7. **Version compatibility** - Use deprecation warnings for breaking changes

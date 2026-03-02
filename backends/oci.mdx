@@ -1,0 +1,444 @@
+---
+title: OCI Backend
+description: Store Terraform state in Oracle Cloud Infrastructure Object Storage.
+---
+
+# OCI Backend
+
+The **OCI** backend stores state in Oracle Cloud Infrastructure (OCI) Object Storage with support for encryption and state locking.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/oci/backend.go`
+
+## Use Cases
+
+- Managing Oracle Cloud Infrastructure resources
+- Teams using OCI services
+- Oracle-based cloud environments
+- Multi-cloud with OCI component
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket    = "terraform-state"
+    namespace = "my-tenancy-namespace"
+  }
+}
+```
+
+## Required Configuration
+
+### bucket
+- **Type:** String
+- **Required:** Yes
+- **Description:** The name of the OCI Object Storage bucket
+
+### namespace
+- **Type:** String
+- **Required:** Yes
+- **Description:** The namespace of the OCI Object Storage
+
+You can find your namespace in the OCI Console under Object Storage settings.
+
+## Optional Configuration
+
+### key
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"terraform.tfstate"`
+- **Description:** The name of the state file stored in the bucket
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket    = "terraform-state"
+    namespace = "my-tenancy-namespace"
+    key       = "production.tfstate"
+  }
+}
+```
+
+### workspace_key_prefix
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"env"`
+- **Description:** The prefix applied to the non-default workspace state path
+
+Workspace states are stored at:
+```
+<workspace_key_prefix>/<workspace_name>/<key>
+```
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket              = "terraform-state"
+    namespace           = "my-tenancy-namespace"
+    workspace_key_prefix = "workspaces"
+  }
+}
+```
+
+### region
+- **Type:** String
+- **Optional:** Yes
+- **Description:** OCI region where the bucket is located
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket    = "terraform-state"
+    namespace = "my-tenancy-namespace"
+    region    = "us-phoenix-1"
+  }
+}
+```
+
+**Common regions:**
+- `us-phoenix-1` - Phoenix, AZ
+- `us-ashburn-1` - Ashburn, VA
+- `eu-frankfurt-1` - Frankfurt, Germany
+- `uk-london-1` - London, UK
+- `ap-tokyo-1` - Tokyo, Japan
+
+## Authentication Methods
+
+The OCI backend supports multiple authentication methods:
+
+### 1. API Key Authentication
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket          = "terraform-state"
+    namespace       = "my-tenancy-namespace"
+    region          = "us-phoenix-1"
+    
+    tenancy_ocid    = "ocid1.tenancy.oc1..aaaaaaa..."
+    user_ocid       = "ocid1.user.oc1..aaaaaaa..."
+    fingerprint     = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+    private_key     = file("~/.oci/oci_api_key.pem")
+  }
+}
+```
+
+Or with private key path:
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket           = "terraform-state"
+    namespace        = "my-tenancy-namespace"
+    
+    tenancy_ocid     = "ocid1.tenancy.oc1..aaaaaaa..."
+    user_ocid        = "ocid1.user.oc1..aaaaaaa..."
+    fingerprint      = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+    private_key_path = "~/.oci/oci_api_key.pem"
+  }
+}
+```
+
+**Note:** Use either `private_key` or `private_key_path`, not both.
+
+**With password-protected key:**
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket                  = "terraform-state"
+    namespace               = "my-tenancy-namespace"
+    
+    tenancy_ocid            = "ocid1.tenancy.oc1..aaaaaaa..."
+    user_ocid               = "ocid1.user.oc1..aaaaaaa..."
+    fingerprint             = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+    private_key_path        = "~/.oci/encrypted_key.pem"
+    private_key_password    = "<key-password>"
+  }
+}
+```
+
+### 2. Config File Profile
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket              = "terraform-state"
+    namespace           = "my-tenancy-namespace"
+    region              = "us-phoenix-1"
+    
+    config_file_profile = "production"
+  }
+}
+```
+
+Default config file location: `~/.oci/config`
+
+Config file format:
+```ini
+[DEFAULT]
+user=ocid1.user.oc1..aaaaaaa...
+fingerprint=aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99
+key_file=~/.oci/oci_api_key.pem
+tenancy=ocid1.tenancy.oc1..aaaaaaa...
+region=us-phoenix-1
+
+[production]
+user=ocid1.user.oc1..bbbbbbb...
+fingerprint=11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00
+key_file=~/.oci/prod_api_key.pem
+tenancy=ocid1.tenancy.oc1..bbbbbbb...
+region=us-ashburn-1
+```
+
+### 3. Instance Principal
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket    = "terraform-state"
+    namespace = "my-tenancy-namespace"
+    region    = "us-phoenix-1"
+    
+    auth = "InstancePrincipal"
+  }
+}
+```
+
+Used when running Terraform from an OCI compute instance with dynamic groups.
+
+### 4. Resource Principal
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket    = "terraform-state"
+    namespace = "my-tenancy-namespace"
+    region    = "us-phoenix-1"
+    
+    auth = "ResourcePrincipal"
+  }
+}
+```
+
+Used when running Terraform from OCI Functions or other resource principal-enabled services.
+
+### 5. Security Token
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket              = "terraform-state"
+    namespace           = "my-tenancy-namespace"
+    region              = "us-phoenix-1"
+    
+    auth                = "SecurityToken"
+    config_file_profile = "token_profile"
+  }
+}
+```
+
+**Note:** Requires `config_file_profile` to be set.
+
+## Encryption
+
+### KMS Encryption
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket     = "terraform-state"
+    namespace  = "my-tenancy-namespace"
+    kms_key_id = "ocid1.key.oc1.phx.aaaaaaa..."
+  }
+}
+```
+
+- **Type:** String
+- **Optional:** Yes
+- **Description:** OCID of a KMS master encryption key for encrypting the state file
+
+### Customer-Supplied Encryption
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket                    = "terraform-state"
+    namespace                 = "my-tenancy-namespace"
+    sse_customer_key          = "<base64-encoded-256-bit-key>"
+    sse_customer_key_sha256   = "<base64-encoded-sha256-hash>"
+    sse_customer_algorithm    = "AES256"
+  }
+}
+```
+
+- **sse_customer_key** - Base64-encoded 256-bit encryption key
+- **sse_customer_key_sha256** - Base64-encoded SHA256 hash of the key
+- **sse_customer_algorithm** - Encryption algorithm (must be "AES256")
+
+**Note:** You cannot use both `kms_key_id` and `sse_customer_key` simultaneously.
+
+## State Locking
+
+The OCI backend uses object lock files for state locking:
+
+- **Lock file:** `<state-path>.tflock`
+- **Automatic locking** during state-modifying operations
+- **Lock release** on operation completion or error
+
+## Configuration Options Summary
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `bucket` | string | Yes | - | Object Storage bucket name |
+| `namespace` | string | Yes | - | Object Storage namespace |
+| `key` | string | No | `terraform.tfstate` | State file name |
+| `workspace_key_prefix` | string | No | `env` | Workspace path prefix |
+| `region` | string | No | - | OCI region |
+| `tenancy_ocid` | string | No | - | Tenancy OCID |
+| `user_ocid` | string | No | - | User OCID |
+| `fingerprint` | string | No | - | API key fingerprint |
+| `private_key` | string | No | - | Private key content |
+| `private_key_path` | string | No | - | Path to private key |
+| `private_key_password` | string | No | - | Private key password |
+| `auth` | string | No | `ApiKey` | Authentication method |
+| `config_file_profile` | string | No | - | Config file profile name |
+| `kms_key_id` | string | No | - | KMS key OCID |
+| `sse_customer_key` | string | No | - | Customer encryption key |
+| `sse_customer_key_sha256` | string | No | - | Key SHA256 hash |
+| `sse_customer_algorithm` | string | No | - | Encryption algorithm |
+
+## Authentication Methods
+
+Valid values for the `auth` attribute:
+
+- `ApiKey` (default)
+- `InstancePrincipal`
+- `ResourcePrincipal`
+- `SecurityToken`
+- `InstancePrincipalWithCerts`
+- `OKEWorkloadIdentity`
+
+## Example: Production with KMS Encryption
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket     = "prod-terraform-state"
+    namespace  = "production-namespace"
+    key        = "production.tfstate"
+    region     = "us-ashburn-1"
+    
+    # Authentication
+    config_file_profile = "production"
+    
+    # Encryption
+    kms_key_id = "ocid1.key.oc1.iad.aaaaaaa..."
+  }
+}
+```
+
+## Example: Using Instance Principal
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket    = "terraform-state"
+    namespace = "my-namespace"
+    region    = "us-phoenix-1"
+    
+    auth = "InstancePrincipal"
+  }
+}
+```
+
+## Example: Multiple Workspaces
+
+```hcl
+terraform {
+  backend "oci" {
+    bucket              = "terraform-state"
+    namespace           = "shared-namespace"
+    key                 = "terraform.tfstate"
+    workspace_key_prefix = "environments"
+    
+    config_file_profile = "default"
+  }
+}
+```
+
+Workspaces are stored at:
+```
+default                                  # Default workspace
+environments/dev/terraform.tfstate       # Dev workspace
+environments/staging/terraform.tfstate   # Staging workspace
+environments/prod/terraform.tfstate      # Prod workspace
+```
+
+## IAM Policy Requirements
+
+Minimum permissions for the Object Storage bucket:
+
+```
+Allow group TerraformGroup to manage objects in compartment id <compartment-ocid> where target.bucket.name='terraform-state'
+Allow group TerraformGroup to read buckets in compartment id <compartment-ocid> where target.bucket.name='terraform-state'
+```
+
+For dynamic groups (Instance/Resource Principal):
+
+```
+Allow dynamic-group TerraformInstances to manage objects in compartment id <compartment-ocid> where target.bucket.name='terraform-state'
+Allow dynamic-group TerraformInstances to read buckets in compartment id <compartment-ocid> where target.bucket.name='terraform-state'
+```
+
+For KMS encryption:
+
+```
+Allow group TerraformGroup to use keys in compartment id <compartment-ocid> where target.key.id = '<kms-key-ocid>'
+```
+
+## Best Practices
+
+1. **Use KMS encryption** for production state files
+2. **Use Instance/Resource Principal** when running on OCI compute
+3. **Separate buckets** for different environments
+4. **Enable versioning** on the bucket for state history
+5. **Use dynamic groups** for automated workflows
+6. **Restrict bucket access** with IAM policies
+7. **Regular backups** of state files
+8. **Monitor bucket access** logs
+9. **Use compartments** to organize resources
+10. **Descriptive workspace names** for clarity
+
+## Troubleshooting
+
+### Finding Your Namespace
+
+In the OCI Console:
+1. Navigate to **Object Storage**
+2. Click on **Buckets**
+3. Your namespace is displayed at the top
+
+Or use the OCI CLI:
+```bash
+oci os ns get
+```
+
+### Permission Errors
+
+Ensure your user/principal has the required policies:
+```bash
+oci iam policy list --compartment-id <compartment-ocid>
+```
+
+### State Lock Issues
+
+If a lock file persists after a failed operation:
+```bash
+oci os object delete \
+  --bucket-name terraform-state \
+  --namespace <namespace> \
+  --name <state-path>.tflock
+```

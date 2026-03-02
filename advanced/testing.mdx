@@ -1,0 +1,432 @@
+---
+title: Testing Framework
+description: Learn how to write and execute integration tests for Terraform configurations using the terraform test command.
+---
+
+# Terraform Testing Framework
+
+Terraform's testing framework enables you to write automated integration tests for your infrastructure code, ensuring your configurations work as expected before deploying to production.
+
+## Overview
+
+The `terraform test` command executes automated integration tests against your Terraform configuration by:
+
+- Discovering test files with `.tftest.hcl` extension
+- Executing run blocks in order
+- Verifying conditional checks and assertions
+- Creating real infrastructure and cleaning it up automatically
+
+<Warning>
+The test command creates real infrastructure. Monitor output carefully to ensure cleanup completes successfully.
+</Warning>
+
+## Command Usage
+
+```bash
+terraform test [options]
+```
+
+### Command Options
+
+**Test Selection**
+
+```bash
+# Filter specific test files
+terraform test -filter=test_web_server.tftest.hcl
+terraform test -filter=test_database.tftest.hcl -filter=test_networking.tftest.hcl
+
+# Specify custom test directory (default: "tests")
+terraform test -test-directory=integration-tests
+```
+
+**Execution Control**
+
+```bash
+# Limit concurrent operations (default: 10)
+terraform test -parallelism=5
+
+# Show plan/state for each run block
+terraform test -verbose
+```
+
+**Output Formats**
+
+```bash
+# Machine-readable JSON output
+terraform test -json
+
+# Save JUnit XML report
+terraform test -junit-xml=test-results.xml
+
+# Disable colored output
+terraform test -no-color
+```
+
+**Variable Input**
+
+```bash
+# Set input variables
+terraform test -var='environment=staging' -var='region=us-west-2'
+
+# Load from variable files
+terraform test -var-file=test.tfvars
+```
+
+**Cloud Integration**
+
+```bash
+# Execute tests remotely on HCP Terraform
+terraform test -cloud-run=app.terraform.io/my-org/my-module
+```
+
+Location: `internal/command/test.go:36-93`
+
+## Test File Structure
+
+Test files use the `.tftest.hcl` extension and are discovered in:
+
+1. Configuration directory
+2. Test directory (default: `tests/`)
+
+### Example Test File
+
+```hcl
+# tests/web_server.tftest.hcl
+
+variables {
+  instance_type = "t2.micro"
+  environment   = "test"
+}
+
+run "create_web_server" {
+  command = plan
+  
+  assert {
+    condition     = aws_instance.web.instance_type == var.instance_type
+    error_message = "Instance type mismatch"
+  }
+}
+
+run "verify_tags" {
+  command = apply
+  
+  assert {
+    condition     = aws_instance.web.tags["Environment"] == "test"
+    error_message = "Environment tag not set correctly"
+  }
+}
+```
+
+## Test Execution
+
+The test command follows a specific execution flow:
+
+### 1. Test Discovery
+
+From `internal/command/test.go:324`:
+
+```go
+preparation.Config, moreDiags = m.loadConfigWithTests(".", preparation.Args.TestDirectory)
+```
+
+Terraform loads:
+- Main configuration from current directory
+- Test files from configuration directory
+- Test files from test directory
+
+### 2. Variable Collection
+
+Two sets of variables are collected:
+
+```go
+// Global variables from main configuration directory
+preparation.Variables, varDiags = preparation.Args.Vars.CollectValues(registerFileSource)
+
+// Test-specific variables from test directory
+preparation.TestVariables, moreDiags = arguments.CollectValuesForTests(
+    preparation.Args.TestDirectory, 
+    registerFileSource,
+)
+```
+
+Location: `internal/command/test.go:392-398`
+
+### 3. Backend Validation
+
+Tests validate that backends aren't reused across run blocks:
+
+```go
+for _, tf := range preparation.Config.Module.Tests {
+    bucketHashes := make(map[int]string)
+    for _, bc := range orderBackendsByDeclarationLine(tf.BackendConfigs) {
+        // Check for duplicate backend configurations
+        if runName, exists := bucketHashes[hash]; exists {
+            // Error: backend already used in another run
+        }
+    }
+}
+```
+
+Location: `internal/command/test.go:331-378`
+
+### 4. Test Execution
+
+Tests can run locally or remotely:
+
+**Local Execution**
+
+```go
+localRunner := &local.TestSuiteRunner{
+    BackendFactory:      backendInit.Backend,
+    Config:              config,
+    GlobalVariables:     variables,
+    GlobalTestVariables: testVariables,
+    TestingDirectory:    args.TestDirectory,
+    Opts:                opts,
+    View:                view,
+    Stopped:             false,
+    Cancelled:           false,
+    StoppedCtx:          stopCtx,
+    CancelledCtx:        cancelCtx,
+    Filter:              args.Filter,
+    Verbose:             args.Verbose,
+    Concurrency:         args.RunParallelism,
+    DeferralAllowed:     args.DeferralAllowed,
+}
+```
+
+Location: `internal/command/test.go:159-179`
+
+**Cloud Execution**
+
+```go
+runner = &cloud.TestSuiteRunner{
+    ConfigDirectory:      ".",
+    TestingDirectory:     args.TestDirectory,
+    Config:               config,
+    Services:             c.Services,
+    Source:               args.CloudRunSource,
+    GlobalVariables:      variables,
+    Stopped:              false,
+    Cancelled:            false,
+    StoppedCtx:           stopCtx,
+    CancelledCtx:         cancelCtx,
+    Verbose:              args.Verbose,
+    OperationParallelism: args.OperationParallelism,
+    Filters:              args.Filter,
+    Renderer:             renderer,
+    View:                 view,
+    Streams:              c.Streams,
+}
+```
+
+Location: `internal/command/test.go:140-157`
+
+## Interruption Handling
+
+Terraform test supports graceful and forceful interruption:
+
+### Graceful Stop (First Interrupt)
+
+```go
+case <-c.ShutdownCh:
+    view.Interrupted()
+    runner.Stop()  // Finish current test, skip remaining
+    stop()
+```
+
+- Completes current test
+- Performs cleanup
+- Skips remaining tests
+
+Location: `internal/command/test.go:204-209`
+
+### Forceful Cancel (Second Interrupt)
+
+```go
+case <-c.ShutdownCh:
+    view.FatalInterrupt()
+    runner.Cancel()  // Cancel immediately
+    cancel()
+    
+    // Wait up to 5 seconds (or 1 minute for cloud runs)
+    select {
+    case <-runningCtx.Done():
+    case <-time.After(waitTime):
+    }
+```
+
+Location: `internal/command/test.go:212-241`
+
+## JUnit XML Output
+
+Generate test reports compatible with CI/CD systems:
+
+```bash
+terraform test -junit-xml=test-results.xml
+```
+
+Implementation:
+
+```go
+if args.JUnitXMLFile != "" {
+    localRunner.JUnit = junit.NewTestJUnitXMLFile(
+        args.JUnitXMLFile, 
+        c.configLoader, 
+        localRunner,
+    )
+}
+```
+
+<Note>
+JUnit XML output is only compatible with local test execution, not cloud runs.
+</Note>
+
+Location: `internal/command/test.go:182-185`
+
+## Command-Line Arguments
+
+From `internal/command/arguments/test.go`:
+
+```go
+type Test struct {
+    // CloudRunSource specifies the remote private module
+    CloudRunSource string
+    
+    // Filter contains test files to execute
+    Filter []string
+    
+    // OperationParallelism limits concurrent operations
+    OperationParallelism int
+    
+    // RunParallelism limits parallel test runs
+    RunParallelism int
+    
+    // TestDirectory overrides test discovery directory
+    TestDirectory string
+    
+    // ViewType specifies output format (human or JSON)
+    ViewType ViewType
+    
+    // JUnitXMLFile specifies optional JUnit report path
+    JUnitXMLFile string
+    
+    // Vars contains common variables for all tests
+    Vars *Vars
+    
+    // Verbose prints plan/state for each run
+    Verbose bool
+    
+    // DeferralAllowed enables deferrals during tests
+    DeferralAllowed bool
+}
+```
+
+## Best Practices
+
+### 1. Organize Test Files
+
+```plaintext
+project/
+├── main.tf
+├── variables.tf
+└── tests/
+    ├── unit/
+    │   ├── validation.tftest.hcl
+    │   └── defaults.tftest.hcl
+    └── integration/
+        ├── deployment.tftest.hcl
+        └── networking.tftest.hcl
+```
+
+### 2. Use Descriptive Test Names
+
+```hcl
+run "verify_security_group_allows_https" {
+  command = plan
+  
+  assert {
+    condition = contains(
+      aws_security_group.web.ingress[*].from_port,
+      443
+    )
+    error_message = "HTTPS port not allowed in security group"
+  }
+}
+```
+
+### 3. Test Different Scenarios
+
+```hcl
+# Test with minimal configuration
+run "minimal_config" {
+  variables {
+    enable_monitoring = false
+    backup_retention  = 1
+  }
+  
+  command = plan
+}
+
+# Test with full configuration
+run "full_config" {
+  variables {
+    enable_monitoring = true
+    backup_retention  = 30
+    enable_encryption = true
+  }
+  
+  command = apply
+}
+```
+
+### 4. Leverage Parallelism
+
+```bash
+# Run tests faster with higher parallelism
+terraform test -parallelism=20 -run-parallelism=5
+```
+
+### 5. Integrate with CI/CD
+
+```yaml
+# GitHub Actions example
+- name: Run Terraform Tests
+  run: |
+    terraform init
+    terraform test -junit-xml=results.xml
+    
+- name: Publish Test Results
+  uses: EnricoMi/publish-unit-test-result-action@v2
+  with:
+    files: results.xml
+```
+
+## Experimental Features
+
+Some testing features require experimental mode:
+
+```bash
+# Enable deferral in tests (experimental)
+terraform test -allow-deferral
+```
+
+Implementation check:
+
+```go
+if !m.AllowExperimentalFeatures && preparation.Args.DeferralAllowed {
+    diags = diags.Append(tfdiags.Sourceless(
+        tfdiags.Error,
+        "Failed to parse command-line flags",
+        "The -allow-deferral flag is only valid in experimental builds.",
+    ))
+}
+```
+
+Location: `internal/command/test.go:301-310`
+
+## Related Resources
+
+- [Cloud Integration](/advanced/cloud-integration) - Run tests on HCP Terraform
+- [Debugging](/advanced/debugging) - Debug failing tests
+- [Stacks](/advanced/stacks) - Test complex Stack configurations

@@ -1,0 +1,524 @@
+---
+title: Input Variables
+description: Define and use input variables to parameterize Terraform configurations.
+---
+
+# Input Variables
+
+Input variables let you parameterize your Terraform configurations, making them flexible and reusable across different environments.
+
+## Declaring Variables
+
+Declare variables using `variable` blocks:
+
+```hcl
+variable "<NAME>" {
+  # Configuration options
+}
+```
+
+### Basic Example
+
+```hcl
+variable "instance_type" {
+  description = "EC2 instance type"
+  type        = string
+  default     = "t2.micro"
+}
+```
+
+## Variable Arguments
+
+<ParamField path="type" type="type constraint">
+  Specifies what value types are accepted for the variable.
+  
+  ```hcl
+  type = string
+  type = number
+  type = bool
+  type = list(string)
+  type = map(number)
+  ```
+</ParamField>
+
+<ParamField path="default" type="any">
+  Default value when no value is provided. Variables without defaults are required.
+  
+  ```hcl
+  default = "t2.micro"
+  default = ["us-west-2a", "us-west-2b"]
+  default = null
+  ```
+</ParamField>
+
+<ParamField path="description" type="string">
+  Human-readable description of the variable's purpose.
+  
+  ```hcl
+  description = "The instance type for web servers"
+  ```
+</ParamField>
+
+<ParamField path="sensitive" type="boolean">
+  Marks the variable as containing sensitive data. Terraform will hide its value in output.
+  
+  ```hcl
+  sensitive = true
+  ```
+</ParamField>
+
+<ParamField path="nullable" type="boolean">
+  Whether the variable can be null. Defaults to `true`.
+  
+  ```hcl
+  nullable = false  # Variable must have a non-null value
+  ```
+</ParamField>
+
+<ParamField path="validation" type="block">
+  Custom validation rules for the variable value.
+  
+  ```hcl
+  validation {
+    condition     = length(var.name) > 3
+    error_message = "Name must be longer than 3 characters."
+  }
+  ```
+</ParamField>
+
+## Variable Types
+
+### Primitive Types
+
+```hcl
+variable "name" {
+  type = string
+}
+
+variable "count" {
+  type = number
+}
+
+variable "enabled" {
+  type = bool
+}
+```
+
+### Collection Types
+
+```hcl
+variable "availability_zones" {
+  type = list(string)
+  default = [
+    "us-west-2a",
+    "us-west-2b",
+    "us-west-2c"
+  ]
+}
+
+variable "tags" {
+  type = map(string)
+  default = {
+    Environment = "production"
+    Team        = "platform"
+  }
+}
+
+variable "unique_ids" {
+  type = set(string)
+}
+```
+
+### Structural Types
+
+```hcl
+variable "server_config" {
+  type = object({
+    instance_type = string
+    ami_id        = string
+    disk_size     = number
+  })
+  
+  default = {
+    instance_type = "t2.micro"
+    ami_id        = "ami-12345678"
+    disk_size     = 20
+  }
+}
+
+variable "port_list" {
+  type = tuple([string, number, bool])
+}
+```
+
+### Complex Types
+
+```hcl
+variable "instances" {
+  type = map(object({
+    instance_type = string
+    ami           = string
+    tags          = map(string)
+  }))
+}
+```
+
+### Any Type
+
+```hcl
+variable "flexible" {
+  type = any  # Accepts any type
+}
+```
+
+## Using Variables
+
+Reference variables with `var.<NAME>`:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = var.ami_id
+  instance_type = var.instance_type
+  
+  tags = var.tags
+}
+```
+
+## Assigning Values
+
+### Command Line
+
+```bash
+terraform apply -var="instance_type=t2.large"
+terraform apply -var="tags={Environment=dev,Team=eng}"
+```
+
+### Variable Files
+
+Create `terraform.tfvars`:
+
+```hcl
+instance_type = "t2.large"
+region        = "us-west-2"
+
+tags = {
+  Environment = "production"
+  ManagedBy   = "Terraform"
+}
+```
+
+Or custom files:
+
+```bash
+terraform apply -var-file="production.tfvars"
+```
+
+### Environment Variables
+
+```bash
+export TF_VAR_instance_type="t2.large"
+export TF_VAR_region="us-west-2"
+
+terraform apply
+```
+
+### Variable Precedence
+
+When multiple values are provided, Terraform uses this precedence (highest to lowest):
+
+1. Command-line `-var` flags
+2. `*.auto.tfvars` files (alphabetically)
+3. `terraform.tfvars` file
+4. Environment variables (`TF_VAR_*`)
+5. Default value in variable declaration
+
+## Variable Validation
+
+Add custom validation rules:
+
+```hcl
+variable "instance_type" {
+  type        = string
+  description = "EC2 instance type"
+  
+  validation {
+    condition     = can(regex("^t[23]\\.", var.instance_type))
+    error_message = "Instance type must be t2 or t3 series."
+  }
+}
+```
+
+### Multiple Validations
+
+```hcl
+variable "port" {
+  type = number
+  
+  validation {
+    condition     = var.port >= 1 && var.port <= 65535
+    error_message = "Port must be between 1 and 65535."
+  }
+  
+  validation {
+    condition     = var.port != 22
+    error_message = "Port 22 is reserved for SSH."
+  }
+}
+```
+
+### Cross-Variable Validation
+
+```hcl
+variable "name" {
+  type = string
+  
+  validation {
+    condition     = length(var.name) > 3
+    error_message = "Name must be longer than 3 characters."
+  }
+}
+```
+
+From the source code (internal/configs/named_values.go:578-602):
+
+```go
+func checkVariableValidationBlock(varName string, vv *CheckRule) hcl.Diagnostics {
+    // The validation condition must include a reference to the variable itself
+    for _, traversal := range vv.Condition.Variables() {
+        ref, moreDiags := addrs.ParseRef(traversal)
+        if !moreDiags.HasErrors() {
+            if addr, ok := ref.Subject.(addrs.InputVariable); ok {
+                if addr.Name == varName {
+                    return nil
+                }
+            }
+        }
+    }
+    
+    return diags.Append(&hcl.Diagnostic{
+        Severity: hcl.DiagError,
+        Summary:  "Invalid variable validation condition",
+        Detail:   fmt.Sprintf("The condition for variable %q must refer to var.%s...", varName, varName),
+    })
+}
+```
+
+## Sensitive Variables
+
+Mark variables containing secrets:
+
+```hcl
+variable "database_password" {
+  type      = string
+  sensitive = true
+}
+```
+
+When marked sensitive:
+- Value is hidden in `terraform plan` and `apply` output
+- Value is redacted in logs
+- Still stored in state file (encrypt state!)
+
+```hcl
+resource "aws_db_instance" "database" {
+  password = var.database_password  # Value hidden in output
+}
+```
+
+## Nullable Variables
+
+Control whether null is allowed:
+
+```hcl
+variable "optional_config" {
+  type     = string
+  nullable = true
+  default  = null
+}
+
+variable "required_config" {
+  type     = string
+  nullable = false
+  # Must provide a non-null value
+}
+```
+
+From internal/configs/named_values.go:34-54:
+
+```go
+type Variable struct {
+    Name        string
+    Description string
+    Default     cty.Value
+    Type        cty.Type
+    
+    Sensitive   bool
+    Nullable    bool
+    NullableSet bool
+    
+    // Const indicates that this variable can be used during early evaluation
+    Const bool
+}
+```
+
+## Ephemeral Variables
+
+Variables that exist only during operations:
+
+```hcl
+variable "temp_token" {
+  type      = string
+  ephemeral = true
+  sensitive = true
+}
+```
+
+<Note>
+Ephemeral variables are not persisted in state files.
+</Note>
+
+## Deprecated Variables
+
+Mark variables as deprecated:
+
+```hcl
+variable "old_config" {
+  type       = string
+  deprecated = "Use new_config instead"
+}
+```
+
+## Variable Naming
+
+Variable names must:
+- Start with a letter or underscore
+- Contain only letters, digits, underscores, and hyphens
+- Not conflict with reserved names
+
+```hcl
+variable "instance_type" { }    # Valid
+variable "instance-type" { }    # Valid
+variable "_private" { }         # Valid
+variable "2nd_instance" { }     # Invalid
+```
+
+<Warning>
+Certain names are reserved and cannot be used as variable names:
+- `source`
+- `version`
+- `providers`
+- `count`
+- `for_each`
+- `depends_on`
+</Warning>
+
+## Variable File Format
+
+### HCL Format
+
+```hcl
+# terraform.tfvars
+instance_type = "t2.large"
+region        = "us-west-2"
+
+availability_zones = [
+  "us-west-2a",
+  "us-west-2b",
+]
+
+tags = {
+  Environment = "production"
+  ManagedBy   = "Terraform"
+}
+```
+
+### JSON Format
+
+```json
+{
+  "instance_type": "t2.large",
+  "region": "us-west-2",
+  "availability_zones": [
+    "us-west-2a",
+    "us-west-2b"
+  ],
+  "tags": {
+    "Environment": "production",
+    "ManagedBy": "Terraform"
+  }
+}
+```
+
+## Variable Examples from Source
+
+From internal/configs/testdata/valid-files/variables.tf:
+
+```hcl
+variable "foo" {
+}
+
+variable "bar" {
+  default = "hello"
+}
+
+variable "baz" {
+  type = list
+}
+
+variable "bar-baz" {
+  default = []
+  type    = list(string)
+}
+
+variable "sensitive_value" {
+  default = {
+    "a" = 1,
+    "b" = 2
+  }
+  sensitive = true
+}
+
+variable "nullable" {
+  type     = string
+  nullable = true
+  default  = "ok"
+}
+
+variable "nullable_default_null" {
+  type     = map(string)
+  nullable = true
+  default  = null
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Descriptions" icon="book">
+    Always provide clear descriptions for variables to help users understand their purpose.
+  </Card>
+  
+  <Card title="Set Type Constraints" icon="shield">
+    Specify explicit types to catch errors early and make intent clear.
+  </Card>
+  
+  <Card title="Validate Input" icon="check">
+    Add validation rules to ensure variables meet requirements.
+  </Card>
+  
+  <Card title="Use Sensitive Flag" icon="eye-slash">
+    Mark sensitive variables to prevent accidental exposure in logs.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Outputs" href="/language/outputs" icon="arrow-up-from-bracket">
+    Export values from your configuration
+  </Card>
+  
+  <Card title="Expressions" href="/language/expressions" icon="function">
+    Use variables in expressions
+  </Card>
+</CardGroup>

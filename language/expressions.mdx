@@ -1,0 +1,583 @@
+---
+title: Expressions
+description: Use expressions to compute and reference values in Terraform configurations.
+---
+
+# Expressions
+
+Expressions are used to compute values in Terraform. They can be simple literal values or complex combinations of references, operators, and function calls.
+
+## Types of Expressions
+
+### Literal Values
+
+Direct value representations:
+
+```hcl
+# Strings
+name = "example"
+multiline = <<EOT
+Line 1
+Line 2
+EOT
+
+# Numbers
+count = 5
+pi = 3.14159
+
+# Booleans
+enabled = true
+disabled = false
+
+# Null
+optional_value = null
+```
+
+### References
+
+Reference values from other parts of your configuration:
+
+```hcl
+# Resource attributes
+ami = aws_ami.ubuntu.id
+subnet_id = aws_subnet.public.id
+
+# Variables
+instance_type = var.instance_type
+region = var.aws_region
+
+# Local values
+common_tags = local.default_tags
+az_count = local.availability_zone_count
+
+# Data sources
+vpc_id = data.aws_vpc.main.id
+
+# Module outputs
+endpoint = module.database.connection_string
+
+# Path references
+config_file = file("${path.module}/config.json")
+template = file("${path.root}/templates/init.sh")
+```
+
+### Operators
+
+#### Arithmetic Operators
+
+```hcl
+locals {
+  addition       = 5 + 3        # 8
+  subtraction    = 10 - 4       # 6
+  multiplication = 3 * 4        # 12
+  division       = 20 / 4       # 5
+  modulo         = 10 % 3       # 1
+  negation       = -5           # -5
+}
+```
+
+#### Comparison Operators
+
+```hcl
+locals {
+  equal              = 5 == 5          # true
+  not_equal          = 5 != 3          # true
+  less_than          = 3 < 5           # true
+  less_or_equal      = 5 <= 5          # true
+  greater_than       = 5 > 3           # true
+  greater_or_equal   = 5 >= 5          # true
+}
+```
+
+#### Logical Operators
+
+```hcl
+locals {
+  and_operation = true && false        # false
+  or_operation  = true || false        # true
+  not_operation = !false               # true
+  
+  # Combining operators
+  complex = (var.environment == "prod") && (var.enabled == true)
+}
+```
+
+### Conditional Expressions
+
+Ternary operator for conditional logic:
+
+```hcl
+instance_type = var.environment == "production" ? "t2.large" : "t2.micro"
+
+count = var.create_resource ? 1 : 0
+
+tags = merge(
+  var.common_tags,
+  var.environment == "production" ? { Critical = "true" } : {}
+)
+```
+
+## Collection Operations
+
+### List and Tuple Access
+
+```hcl
+# Index access
+first_az = var.availability_zones[0]
+second_az = var.availability_zones[1]
+
+# Negative indices (from end)
+last_az = var.availability_zones[-1]
+
+# Length
+az_count = length(var.availability_zones)
+```
+
+### Map and Object Access
+
+```hcl
+# Dot notation
+region = var.config.region
+
+# Bracket notation
+region = var.config["region"]
+
+# With variables
+value = var.settings[var.key_name]
+```
+
+### Splat Expressions
+
+Extract attributes from lists:
+
+```hcl
+# For resources with count
+instance_ids = aws_instance.web[*].id
+private_ips = aws_instance.web[*].private_ip
+
+# For resources with for_each
+instance_ids = values(aws_instance.web)[*].id
+
+# Nested attribute access
+vpc_ids = aws_subnet.private[*].vpc_id
+```
+
+## For Expressions
+
+Transform and filter collections:
+
+### List Transformation
+
+```hcl
+# Transform elements
+uppercase_names = [for name in var.names : upper(name)]
+
+# With index
+indexed_names = [for i, name in var.names : "${i}: ${name}"]
+
+# Filtering
+production_instances = [
+  for instance in var.instances :
+  instance.id if instance.environment == "production"
+]
+```
+
+### Map Transformation
+
+```hcl
+# Transform map
+port_map = {
+  for key, value in var.ports :
+  key => value + 1000
+}
+
+# Create map from list
+instance_map = {
+  for instance in aws_instance.web :
+  instance.id => instance.private_ip
+}
+
+# Filtering maps
+active_users = {
+  for username, user in var.users :
+  username => user if user.active
+}
+```
+
+### Grouping
+
+```hcl
+# Group by attribute
+instances_by_az = {
+  for instance in aws_instance.web :
+  instance.availability_zone => instance...
+}
+```
+
+## String Templates
+
+### Interpolation
+
+Embed expressions in strings:
+
+```hcl
+greeting = "Hello, ${var.name}!"
+
+path = "/var/lib/${var.service_name}/data"
+
+url = "https://${aws_instance.web.public_ip}:${var.port}"
+```
+
+### String Directives
+
+Control flow in strings:
+
+```hcl
+# For loops
+user_list = <<EOT
+Users:
+%{for user in var.users~}
+  - ${user}
+%{endfor~}
+EOT
+
+# Conditionals
+config = <<EOT
+%{if var.debug_mode~}
+debug = true
+log_level = verbose
+%{else~}
+debug = false
+log_level = info
+%{endif~}
+EOT
+```
+
+### Heredoc Strings
+
+Multi-line strings with indentation control:
+
+```hcl
+# Standard heredoc
+script = <<EOT
+#!/bin/bash
+echo "Hello World"
+EOT
+
+# Indented heredoc (strips leading whitespace)
+script = <<-EOT
+  #!/bin/bash
+  echo "Hello World"
+EOT
+```
+
+## Function Calls
+
+Call built-in functions:
+
+```hcl
+# String functions
+uppercase = upper(var.name)
+lowercase = lower(var.name)
+joined = join(", ", var.list)
+
+# Collection functions
+list_length = length(var.items)
+merged_map = merge(var.map1, var.map2)
+flattened = flatten(var.nested_list)
+
+# Numeric functions
+absolute = abs(-5)
+ceiling = ceil(3.7)
+floor = floor(3.7)
+
+# Date functions
+current_time = timestamp()
+future_time = timeadd(timestamp(), "24h")
+
+# Encoding functions
+base64_encoded = base64encode("hello")
+json_encoded = jsonencode({name = "value"})
+
+# File functions
+file_content = file("${path.module}/config.json")
+file_exists = fileexists("${path.module}/optional.txt")
+```
+
+## Type Conversions
+
+Explicit type conversions:
+
+```hcl
+# Convert to string
+string_value = tostring(123)
+
+# Convert to number
+number_value = tonumber("42")
+
+# Convert to bool
+bool_value = tobool("true")
+
+# Convert to list
+list_value = tolist(["a", "b"])
+
+# Convert to set
+set_value = toset(["a", "b", "a"])  # Removes duplicates
+
+# Convert to map
+map_value = tomap({key = "value"})
+```
+
+## Dynamic Blocks
+
+Generate nested blocks dynamically:
+
+```hcl
+resource "aws_security_group" "example" {
+  name = "example"
+  
+  dynamic "ingress" {
+    for_each = var.ingress_rules
+    content {
+      from_port   = ingress.value.from_port
+      to_port     = ingress.value.to_port
+      protocol    = ingress.value.protocol
+      cidr_blocks = ingress.value.cidr_blocks
+    }
+  }
+}
+```
+
+With iterator:
+
+```hcl
+dynamic "ingress" {
+  for_each = var.ingress_rules
+  iterator = rule
+  content {
+    from_port   = rule.value.from_port
+    to_port     = rule.value.to_port
+    protocol    = rule.value.protocol
+  }
+}
+```
+
+## Special Values
+
+### Path References
+
+```hcl
+path.module  # Path to the current module
+path.root    # Path to the root module
+path.cwd     # Current working directory
+```
+
+### Terraform Values
+
+```hcl
+terraform.workspace  # Current workspace name
+```
+
+### Resource Meta-Arguments
+
+```hcl
+count.index       # Current index in count
+each.key         # Current key in for_each
+each.value       # Current value in for_each
+self.<ATTRIBUTE> # Current resource's attribute
+```
+
+## Try and Can Functions
+
+Handle errors gracefully:
+
+```hcl
+# Try multiple expressions
+value = try(
+  var.value,
+  local.default_value,
+  "fallback"
+)
+
+# Check if expression succeeds
+is_valid = can(regex("^[a-z]+$", var.name))
+
+# Conditional based on validity
+value = can(var.optional_value) ? var.optional_value : "default"
+```
+
+## Type Constraints
+
+Type specifications for validation:
+
+```hcl
+variable "example" {
+  type = object({
+    name    = string
+    age     = number
+    active  = bool
+    tags    = map(string)
+    items   = list(string)
+    config  = object({
+      enabled = bool
+      value   = string
+    })
+  })
+}
+```
+
+### Optional Attributes
+
+```hcl
+variable "server" {
+  type = object({
+    name = string
+    port = optional(number, 8080)  # Optional with default
+    ssl  = optional(bool)           # Optional without default
+  })
+}
+```
+
+## References and Dependency Detection
+
+Terraform automatically detects dependencies:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.ubuntu.id      # Depends on data source
+  subnet_id     = aws_subnet.public.id        # Depends on subnet
+  instance_type = var.instance_type           # Depends on variable
+  
+  # Explicit reference creates dependency
+  user_data = templatefile("init.sh", {
+    db_endpoint = aws_db_instance.main.endpoint
+  })
+}
+```
+
+## Expression Examples
+
+### Complex Conditionals
+
+```hcl
+locals {
+  instance_type = (
+    var.environment == "production" ? "t2.large" :
+    var.environment == "staging" ? "t2.medium" :
+    "t2.micro"
+  )
+}
+```
+
+### Nested For Expressions
+
+```hcl
+locals {
+  all_instance_ips = flatten([
+    for az, instances in var.instances_by_az : [
+      for instance in instances : instance.ip
+    ]
+  ])
+}
+```
+
+### Map Merging
+
+```hcl
+locals {
+  tags = merge(
+    var.common_tags,
+    var.environment_tags,
+    {
+      Name      = var.instance_name
+      Terraform = "true"
+    }
+  )
+}
+```
+
+### Filtering and Transformation
+
+```hcl
+locals {
+  # Filter and transform
+  active_user_emails = [
+    for username, user in var.users :
+    user.email if user.active && user.email != null
+  ]
+  
+  # Group and count
+  instances_per_az = {
+    for az in distinct([for i in aws_instance.web : i.availability_zone]) :
+    az => length([for i in aws_instance.web : i if i.availability_zone == az])
+  }
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Locals for Complexity" icon="code">
+    Move complex expressions to `locals` for readability and reusability.
+  </Card>
+  
+  <Card title="Avoid Deep Nesting" icon="layer-group">
+    Break down deeply nested expressions into multiple steps.
+  </Card>
+  
+  <Card title="Add Comments" icon="comment">
+    Document complex expressions to explain the logic.
+  </Card>
+  
+  <Card title="Handle Errors" icon="shield-exclamation">
+    Use `try` and `can` to handle potential errors gracefully.
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Conditional Resource Creation
+
+```hcl
+resource "aws_eip" "web" {
+  count = var.create_public_ip ? 1 : 0
+  
+  instance = aws_instance.web.id
+}
+```
+
+### Dynamic Tagging
+
+```hcl
+tags = merge(
+  var.common_tags,
+  {
+    Name        = "${var.environment}-${var.service}"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  },
+  var.additional_tags
+)
+```
+
+### Safe Attribute Access
+
+```hcl
+# Using try for optional attributes
+endpoint = try(aws_db_instance.main.endpoint, "")
+
+# Using can to check existence
+has_public_ip = can(aws_instance.web.public_ip)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Functions" href="/language/functions" icon="function">
+    Explore built-in functions
+  </Card>
+  
+  <Card title="Variables" href="/language/variables" icon="input-text">
+    Use expressions with variables
+  </Card>
+</CardGroup>

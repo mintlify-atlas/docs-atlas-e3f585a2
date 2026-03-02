@@ -1,0 +1,181 @@
+---
+title: terraform state rm
+description: Remove instances from the Terraform state.
+---
+
+The `terraform state rm` command removes items from the Terraform state, causing Terraform to "forget" those items without destroying them in the remote system.
+
+## Synopsis
+
+Remove instances from the state.
+
+## Usage
+
+```bash
+terraform state rm [options] ADDRESS...
+```
+
+This command removes one or more resource instances from the Terraform state based on the addresses given. You can view and list the available instances with `terraform state list`.
+
+If you give the address of an entire module, all of the instances in that module and any of its child modules will be removed from the state.
+
+If you give the address of a resource that has `count` or `for_each` set, all of the instances of that resource will be removed from the state.
+
+## Options
+
+<ParamField path="-dry-run" type="boolean">
+  If set, prints out what would've been removed but doesn't actually remove anything.
+</ParamField>
+
+<ParamField path="-backup" type="string">
+  Path where Terraform should write the backup state.
+</ParamField>
+
+<ParamField path="-lock" type="boolean" default="true">
+  Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+</ParamField>
+
+<ParamField path="-lock-timeout" type="duration" default="0s">
+  Duration to retry a state lock.
+</ParamField>
+
+<ParamField path="-state" type="string">
+  Path to the state file to update. Defaults to the current workspace state. Legacy option for the local backend only.
+</ParamField>
+
+<ParamField path="-ignore-remote-version" type="boolean">
+  Continue even if remote and local Terraform versions are incompatible. This may result in an unusable workspace, and should be used with extreme caution.
+</ParamField>
+
+## Arguments
+
+<ParamField path="ADDRESS" type="string" required>
+  One or more resource addresses to remove. Can be resource instances, entire resources, or modules.
+</ParamField>
+
+## Examples
+
+### Remove a single resource
+
+Remove a specific resource instance from the state:
+
+```bash
+terraform state rm aws_instance.web
+```
+
+Output:
+```
+Removed aws_instance.web
+Successfully removed 1 resource instance(s).
+```
+
+### Remove multiple resources
+
+Remove multiple resource instances at once:
+
+```bash
+terraform state rm aws_instance.web aws_security_group.web
+```
+
+Output:
+```
+Removed aws_instance.web
+Removed aws_security_group.web
+Successfully removed 2 resource instance(s).
+```
+
+### Remove a counted resource instance
+
+Remove a specific instance from a resource with count:
+
+```bash
+terraform state rm 'aws_instance.db[0]'
+```
+
+### Remove all instances of a resource
+
+Remove all instances when using count or for_each:
+
+```bash
+terraform state rm aws_instance.db
+```
+
+Output:
+```
+Removed aws_instance.db[0]
+Removed aws_instance.db[1]
+Removed aws_instance.db[2]
+Successfully removed 3 resource instance(s).
+```
+
+### Remove an entire module
+
+Remove all resources in a module:
+
+```bash
+terraform state rm module.vpc
+```
+
+This removes all resources within the module and its submodules.
+
+### Dry run
+
+Preview what would be removed without making changes:
+
+```bash
+terraform state rm -dry-run aws_instance.web
+```
+
+Output:
+```
+Would remove aws_instance.web
+```
+
+### Use custom state file
+
+Remove resources from a specific state file:
+
+```bash
+terraform state rm -state=path/to/terraform.tfstate aws_instance.web
+```
+
+### Remove module resource
+
+Remove a specific resource within a module:
+
+```bash
+terraform state rm module.vpc.aws_subnet.private
+```
+
+## Common Use Cases
+
+### Stop managing resources
+
+When you want Terraform to stop managing a resource without destroying it. This is useful when:
+- Transferring resource management to another Terraform configuration
+- Manually managing a resource going forward
+- A resource was created by mistake in Terraform
+
+### Clean up orphaned resources
+
+Remove resources from state that have already been manually deleted from the cloud provider.
+
+### Prevent resource destruction
+
+Before running `terraform destroy`, selectively remove critical resources from state to prevent their destruction.
+
+### Fix state inconsistencies
+
+Resolve state issues by removing problematic resources, then re-importing them if needed.
+
+### Import workflow
+
+When re-importing resources with different configurations, first remove the old state entry.
+
+## Important Notes
+
+- Resources removed from state are **not destroyed** in the actual infrastructure
+- Terraform will no longer track or manage removed resources
+- A backup of the state is created before removal
+- On the next `terraform plan`, removed resources will appear as needing creation unless they're also removed from your configuration
+- Use `-dry-run` to preview changes before committing to them

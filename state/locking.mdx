@@ -1,0 +1,508 @@
+---
+title: State Locking
+description: Understanding Terraform's state locking mechanism to prevent concurrent modifications and ensure consistency
+---
+
+## Overview
+
+State locking is a critical safety mechanism that prevents multiple Terraform processes from modifying state simultaneously. Concurrent state modifications can corrupt state and lead to infrastructure inconsistencies.
+
+## Why State Locking Matters
+
+### The Concurrent Modification Problem
+
+Without locking, two operators running Terraform simultaneously could:
+
+1. Both read the same initial state
+2. Both plan changes based on that state
+3. Both write modified state back
+4. Second write overwrites first, losing changes
+5. State becomes inconsistent with reality
+
+### Protected Operations
+
+State locking protects these operations:
+
+- `terraform apply`
+- `terraform destroy`
+- `terraform import`
+- `terraform state` commands (mv, rm, etc.)
+- `terraform plan` (when using `-out` flag)
+
+## State Locking Architecture
+
+### Lock Information
+
+Locks contain metadata about who holds the lock:
+
+```go
+// From internal/states/statemgr/locker.go
+type LockInfo struct {
+    ID        string    // Unique lock ID
+    Operation string    // Operation being performed
+    Info      string    // Additional information
+    Who       string    // User and hostname
+    Version   string    // Terraform version
+    Created   time.Time // When lock was acquired
+    Path      string    // State path
+}
+```
+
+**Reference**: `internal/states/statemgr/locker.go`
+
+### Locker Interface
+
+State managers that support locking implement the `Locker` interface:
+
+```go
+// From internal/states/statemgr/locker.go
+type Locker interface {
+    Lock(info *LockInfo) (string, error)
+    Unlock(id string) error
+}
+```
+
+Backends return state managers that may or may not implement this interface.
+
+**Reference**: `internal/backend/backend.go:86-94`
+
+## Command-Level Locking
+
+Terraform commands use the `clistate.Locker` wrapper for user-friendly locking:
+
+```go
+// From internal/command/clistate/state.go:56
+type Locker interface {
+    WithContext(ctx context.Context) Locker
+    Lock(s statemgr.Locker, reason string) tfdiags.Diagnostics
+    Unlock() tfdiags.Diagnostics
+    Timeout() time.Duration
+}
+```
+
+**Reference**: `internal/command/clistate/state.go:56-68`
+
+### Creating a Locker
+
+```go
+// From internal/command/state_mv.go:90
+stateLocker := clistate.NewLocker(
+    c.stateLockTimeout,
+    views.NewStateLocker(arguments.ViewHuman, c.View)
+)
+```
+
+The locker wraps timeout and UI notification behavior.
+
+**Reference**: `internal/command/state_mv.go:90`
+
+### Acquiring a Lock
+
+```go
+// From internal/command/state_mv.go:91
+if diags := stateLocker.Lock(stateMgr, "state-mv"); diags.HasErrors() {
+    c.showDiagnostics(diags)
+    return 1
+}
+defer func() {
+    if diags := stateLocker.Unlock(); diags.HasErrors() {
+        c.showDiagnostics(diags)
+    }
+}()
+```
+
+**Reference**: `internal/command/state_mv.go:91-99`
+
+### Lock Timeout
+
+Locks are acquired with a timeout to prevent indefinite waiting:
+
+```go
+// From internal/command/clistate/state.go:117
+ctx, cancel := context.WithTimeout(l.ctx, l.timeout)
+defer cancel()
+
+err := slowmessage.Do(LockThreshold, func() error {
+    id, err := statemgr.LockWithContext(ctx, s, lockInfo)
+    l.lockID = id
+    return err
+}, l.view.Locking)
+```
+
+Default timeout is configurable via `-lock-timeout` flag.
+
+**Reference**: `internal/command/clistate/state.go:117-127`
+
+## Lock Error Messages
+
+### Lock Acquisition Error
+
+```go
+// From internal/command/clistate/state.go:24
+const LockErrorMessage = `Error message: %s
+
+Terraform acquires a state lock to protect the state from being written
+by multiple users at the same time. Please resolve the issue above and try
+again. For most commands, you can disable locking with the "-lock=false"
+flag, but this is not recommended.`
+```
+
+**Reference**: `internal/command/clistate/state.go:24-29`
+
+### Unlock Error
+
+```go
+// From internal/command/clistate/state.go:31
+const UnlockErrorMessage = `Error message: %s
+
+Terraform acquires a lock when accessing your state to prevent others
+running Terraform to potentially modify the state at the same time. An
+error occurred while releasing this lock. This could mean that the lock
+did or did not release properly. If the lock didn't release properly,
+Terraform may not be able to run future commands since it'll appear as if
+the lock is held.
+
+In this scenario, please call the "force-unlock" command to unlock the
+state manually. This is a very dangerous operation since if it is done
+erroneously it could result in two people modifying state at the same time.`
+```
+
+**Reference**: `internal/command/clistate/state.go:31-44`
+
+## Lock Timeout Threshold
+
+User notification appears after a threshold:
+
+```go
+// From internal/command/clistate/state.go:23
+const LockThreshold = 400 * time.Millisecond
+```
+
+If lock acquisition takes longer than 400ms, Terraform displays a waiting message.
+
+**Reference**: `internal/command/clistate/state.go:23`
+
+## Disabling Locks
+
+### The -lock Flag
+
+Most state-modifying commands support `-lock=false`:
+
+```bash
+terraform apply -lock=false
+terraform state rm -lock=false aws_instance.example
+```
+
+<Warning>
+Disabling locks is dangerous and should only be used when you are certain no other processes are accessing the state.
+</Warning>
+
+### Lock-Disabled Wrapper
+
+For testing or special cases, locks can be disabled programmatically:
+
+```go
+// From internal/states/statemgr/lock.go:16
+type LockDisabled struct {
+    Inner Full
+}
+
+func (s *LockDisabled) Lock(info *LockInfo) (string, error) {
+    return "", nil  // No-op
+}
+
+func (s *LockDisabled) Unlock(id string) error {
+    return nil  // No-op
+}
+```
+
+**Reference**: `internal/states/statemgr/lock.go:16-48`
+
+## Backend Locking Support
+
+### Backends with Locking
+
+These backends support native locking:
+
+- **S3**: Using DynamoDB table for locks
+- **Azure**: Using blob leases
+- **GCS**: Using object versioning
+- **Terraform Cloud**: Built-in locking
+- **Consul**: Using key locks
+- **etcd**: Using distributed locks
+- **Kubernetes**: Using lease objects
+
+### Backends without Locking
+
+These backends do NOT support locking:
+
+- **Local**: Basic filesystem backend
+- **HTTP**: Plain HTTP endpoints  
+- **Artifactory**: JFrog Artifactory backend
+- **PostgreSQL**: Direct database backend (deprecated)
+
+<Note>
+For production use, always choose backends that support locking.
+</Note>
+
+## S3 Backend Locking Example
+
+### Configuration
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "prod/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    
+    # DynamoDB table for state locking
+    dynamodb_table = "terraform-state-locks"
+  }
+}
+```
+
+### DynamoDB Table Setup
+
+```hcl
+resource "aws_dynamodb_table" "terraform_locks" {
+  name           = "terraform-state-locks"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  tags = {
+    Name = "Terraform State Locks"
+  }
+}
+```
+
+### Required IAM Permissions
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": "arn:aws:dynamodb:*:*:table/terraform-state-locks"
+    }
+  ]
+}
+```
+
+## Force Unlock
+
+### When to Force Unlock
+
+Force unlock should only be used when:
+
+1. A Terraform process crashed and didn't release its lock
+2. A CI/CD job was killed and left a stale lock
+3. You are absolutely certain no other process is using the state
+
+### Force Unlock Command
+
+```bash
+# Get lock ID from error message
+terraform force-unlock <lock-id>
+```
+
+Example:
+
+```bash
+terraform force-unlock a1b2c3d4-5678-90ef-ghij-klmnopqrstuv
+```
+
+<Warning>
+Force unlocking while another process is running can lead to state corruption. Only use this when you are certain the lock is stale.
+</Warning>
+
+### Confirming Force Unlock
+
+Terraform requires confirmation:
+
+```
+Do you really want to force-unlock?
+  Terraform will remove the lock on the remote state.
+  This will allow local Terraform commands to modify this state, even though it
+  may be still be in use. Only 'yes' will be accepted to confirm.
+
+  Enter a value: yes
+```
+
+## Lock Monitoring
+
+### Viewing Lock Information
+
+Different backends expose lock information differently:
+
+#### DynamoDB (S3 Backend)
+
+```bash
+aws dynamodb get-item \
+  --table-name terraform-state-locks \
+  --key '{"LockID": {"S": "my-bucket/prod/terraform.tfstate-md5"}}'
+```
+
+#### Consul Backend
+
+```bash
+consul kv get terraform/state/locks/production
+```
+
+### Lock Expiration
+
+Most backends do not have automatic lock expiration:
+
+- Locks persist until explicitly released
+- Crashed processes leave stale locks
+- Monitor for stale locks in production
+
+<Note>
+Consider implementing monitoring to detect locks held longer than expected operation times.
+</Note>
+
+## Locking Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always Enable Locking">
+    Use backends with locking support for all shared environments. The local backend without locking is only suitable for individual development.
+  </Accordion>
+  
+  <Accordion title="Set Appropriate Timeouts">
+    Configure lock timeouts based on expected operation duration:
+    ```bash
+    terraform apply -lock-timeout=10m
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle Lock Failures Gracefully">
+    In CI/CD, implement retry logic with exponential backoff for transient lock failures.
+  </Accordion>
+  
+  <Accordion title="Monitor Lock Duration">
+    Track how long operations hold locks to identify potential issues:
+    - Long-running plans
+    - Stuck operations
+    - Resource contention
+  </Accordion>
+  
+  <Accordion title="Document Lock Recovery">
+    Maintain runbooks for force-unlock scenarios:
+    - How to verify process is truly dead
+    - Steps to safely force unlock
+    - Post-unlock verification
+  </Accordion>
+  
+  <Accordion title="Use Descriptive Lock Operations">
+    Lock operation names help identify what's running:
+    - "apply" 
+    - "destroy"
+    - "state-mv"
+    - "import"
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting Lock Issues
+
+### Lock Already Held
+
+```
+Error: Error acquiring the state lock
+
+Error message: ConditionalCheckFailedException: The conditional request failed
+Lock Info:
+  ID:        a1b2c3d4-5678-90ef-ghij-klmnopqrstuv
+  Path:      my-bucket/prod/terraform.tfstate
+  Operation: apply
+  Who:       alice@laptop.local
+  Version:   1.5.0
+  Created:   2023-10-15 14:30:00 UTC
+```
+
+**Solutions**:
+
+1. Wait for the other operation to complete
+2. Contact the user holding the lock
+3. Verify the process is still running
+4. Force unlock if process is confirmed dead
+
+### Lock Timeout
+
+```
+Error: Error acquiring the state lock
+
+Error message: timeout while waiting for state lock
+```
+
+**Solutions**:
+
+1. Increase timeout: `terraform apply -lock-timeout=20m`
+2. Check if another operation is stuck
+3. Verify backend connectivity
+
+### Permission Denied on Lock
+
+```
+Error: Error acquiring the state lock
+
+Error message: AccessDenied: User not authorized to perform dynamodb:PutItem
+```
+
+**Solution**: Add required IAM permissions for lock table operations.
+
+### Stale Lock After Crash
+
+If Terraform crashes, the lock may not be released:
+
+```bash
+# 1. Verify process is not running
+ps aux | grep terraform
+
+# 2. Check for lock in backend
+aws dynamodb get-item --table-name terraform-state-locks ...
+
+# 3. Force unlock
+terraform force-unlock <lock-id>
+
+# 4. Verify state integrity
+terraform plan
+```
+
+## Lock-Free Operations
+
+These operations do not require locks:
+
+- `terraform init`
+- `terraform validate`  
+- `terraform plan` (without `-out`)
+- `terraform show`
+- `terraform output`
+- `terraform state list` (read-only)
+- `terraform state show` (read-only)
+
+## Related Resources
+
+- [State Overview](/state/overview) - Core state concepts
+- [State Backends](/state/backends) - Backend configuration and locking support
+- [State Manipulation](/state/manipulation) - State commands and locking behavior
+
+## Source Code References
+
+- **CLI Locking**: `internal/command/clistate/state.go`
+- **State Manager Locking**: `internal/states/statemgr/locker.go`
+- **Lock Disabled**: `internal/states/statemgr/lock.go`
+- **Lock with Context**: `internal/states/statemgr/lock.go`
+- **State Move Locking**: `internal/command/state_mv.go:89-99`
+- **State Remove Locking**: `internal/command/state_rm.go:50-61`

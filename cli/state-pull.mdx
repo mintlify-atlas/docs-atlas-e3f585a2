@@ -1,0 +1,186 @@
+---
+title: terraform state pull
+description: Pull current state and output to stdout.
+---
+
+The `terraform state pull` command downloads the current state and outputs it to stdout.
+
+## Synopsis
+
+Pull current state and output to stdout.
+
+## Usage
+
+```bash
+terraform state pull [options]
+```
+
+This command "pulls" the current state and outputs it to stdout. As part of this process, Terraform will upgrade the state format of the local copy to the current version.
+
+The primary use of this is for state stored remotely. This command will still work with local state but is less useful for this case.
+
+## Options
+
+This command has no command-specific options. It uses the backend configuration from your Terraform configuration.
+
+## Examples
+
+### Pull and view state
+
+Pull the current state and view it:
+
+```bash
+terraform state pull
+```
+
+Example output (JSON format):
+```json
+{
+  "version": 4,
+  "terraform_version": "1.6.0",
+  "serial": 42,
+  "lineage": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_instance",
+      "name": "web",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "ami": "ami-0c55b159cbfafe1f0",
+            "id": "i-1234567890abcdef0",
+            "instance_type": "t2.micro"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Save state to a file
+
+Pull state and save it to a local file:
+
+```bash
+terraform state pull > backup.tfstate
+```
+
+### View formatted state
+
+Pull and format state with jq:
+
+```bash
+terraform state pull | jq .
+```
+
+### Extract specific information
+
+Pull state and extract specific resource information:
+
+```bash
+terraform state pull | jq '.resources[] | select(.type == "aws_instance")'
+```
+
+### Check state version
+
+View the Terraform version used to write the state:
+
+```bash
+terraform state pull | jq '.terraform_version'
+```
+
+Example output:
+```
+"1.6.0"
+```
+
+### List all resource types
+
+Extract all resource types from the state:
+
+```bash
+terraform state pull | jq -r '.resources[].type' | sort -u
+```
+
+Example output:
+```
+aws_instance
+aws_security_group
+aws_subnet
+aws_vpc
+```
+
+### Get resource count
+
+Count total resources in state:
+
+```bash
+terraform state pull | jq '.resources | length'
+```
+
+## Common Use Cases
+
+### Backup remote state
+
+Create a local backup of your remote state file:
+
+```bash
+terraform state pull > "backup-$(date +%Y%m%d-%H%M%S).tfstate"
+```
+
+### Inspect remote state
+
+Examine the contents of your remote state without downloading it as a file.
+
+### State migration
+
+Pull state from one backend as part of migrating to a different backend:
+
+```bash
+# Pull from current backend
+terraform state pull > migration.tfstate
+
+# Reconfigure backend
+terraform init -migrate-state
+```
+
+### Debug state issues
+
+Inspect the raw state format to debug issues with resources or state structure.
+
+### Scripting and automation
+
+Use in scripts to extract information about your infrastructure:
+
+```bash
+#!/bin/bash
+# Get all EC2 instance IDs
+terraform state pull | jq -r '.resources[] | 
+  select(.type == "aws_instance") | 
+  .instances[].attributes.id'
+```
+
+### Verify state format
+
+Check the state file version and ensure it's compatible with your Terraform version.
+
+### Extract outputs programmatically
+
+Get output values from state for use in other tools:
+
+```bash
+terraform state pull | jq '.outputs'
+```
+
+## Important Notes
+
+- The output is in JSON format (Terraform state file format)
+- This is a read-only operation; it doesn't modify the state
+- The state format may be upgraded to match your current Terraform version
+- For remote backends, this downloads the current state snapshot
+- The output includes sensitive data; be careful when redirecting to files or sharing

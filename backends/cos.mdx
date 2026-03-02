@@ -1,0 +1,461 @@
+---
+title: COS Backend
+description: Store Terraform state in Tencent Cloud COS (Cloud Object Storage).
+---
+
+# COS Backend
+
+The **COS** backend stores state in Tencent Cloud Object Storage (COS) with support for encryption and object tagging.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/cos/backend.go`
+
+## Use Cases
+
+- Managing Tencent Cloud infrastructure
+- Teams using Tencent Cloud services
+- China region compliance requirements
+- Multi-cloud with Tencent Cloud component
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket = "terraform-state-1234567890"
+    region = "ap-guangzhou"
+  }
+}
+```
+
+## Required Configuration
+
+### bucket
+- **Type:** String
+- **Required:** Yes
+- **Description:** The name of the COS bucket
+
+### region
+- **Type:** String
+- **Required:** Yes
+- **Environment Variable:** `TENCENTCLOUD_REGION`
+- **Description:** The region of the COS bucket
+
+**Common regions:**
+- `ap-guangzhou` - Guangzhou
+- `ap-shanghai` - Shanghai
+- `ap-beijing` - Beijing
+- `ap-chengdu` - Chengdu
+- `ap-singapore` - Singapore
+
+## Optional Configuration
+
+### prefix
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `""`
+- **Description:** The directory for saving the state file in the bucket
+
+**Important:** Must not start with `/` or `./`
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket = "terraform-state-1234567890"
+    region = "ap-guangzhou"
+    prefix = "terraform/state"  # Valid
+    # prefix = "/terraform"      # Invalid
+  }
+}
+```
+
+### key
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"terraform.tfstate"`
+- **Description:** The path for saving the state file in the bucket
+
+**Important:** Cannot start or end with `/`
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket = "terraform-state-1234567890"
+    region = "ap-guangzhou"
+    key    = "production.tfstate"  # Valid
+    # key  = "/state.tfstate"      # Invalid
+  }
+}
+```
+
+## Authentication
+
+The COS backend supports multiple authentication methods:
+
+### 1. Secret ID and Secret Key
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket     = "terraform-state-1234567890"
+    region     = "ap-guangzhou"
+    secret_id  = "<secret-id>"
+    secret_key = "<secret-key>"
+  }
+}
+```
+
+**Environment Variables:**
+- `TENCENTCLOUD_SECRET_ID`
+- `TENCENTCLOUD_SECRET_KEY`
+
+### 2. Security Token (Temporary Credentials)
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket         = "terraform-state-1234567890"
+    region         = "ap-guangzhou"
+    secret_id      = "<temporary-secret-id>"
+    secret_key     = "<temporary-secret-key>"
+    security_token = "<security-token>"
+  }
+}
+```
+
+**Environment Variable:** `TENCENTCLOUD_SECURITY_TOKEN`
+
+### 3. CAM Role (CVM Instance Role)
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket        = "terraform-state-1234567890"
+    region        = "ap-guangzhou"
+    cam_role_name = "TerraformRole"
+  }
+}
+```
+
+**Environment Variable:** `TENCENTCLOUD_CAM_ROLE_NAME`
+
+Used when running Terraform from a CVM instance with an attached CAM role.
+
+### 4. Shared Credentials File
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket                  = "terraform-state-1234567890"
+    region                  = "ap-guangzhou"
+    profile                 = "production"
+    shared_credentials_dir  = "~/.tccli"
+  }
+}
+```
+
+**Default directory:** `~/.tccli`
+
+**Environment Variables:**
+- `TENCENTCLOUD_PROFILE`
+- `TENCENTCLOUD_SHARED_CREDENTIALS_DIR`
+
+Credentials file format:
+```json
+{
+  "secretId": "<secret-id>",
+  "secretKey": "<secret-key>",
+  "token": "<optional-token>"
+}
+```
+
+### 5. Assume Role
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket     = "terraform-state-1234567890"
+    region     = "ap-guangzhou"
+    secret_id  = "<secret-id>"
+    secret_key = "<secret-key>"
+    
+    assume_role {
+      role_arn         = "qcs::cam::uin/100000000001:roleName/TerraformRole"
+      session_name     = "terraform-session"
+      session_duration = 7200
+    }
+  }
+}
+```
+
+**Assume Role Options:**
+
+- **role_arn** (Required) - ARN of the CAM role to assume
+- **session_name** (Required) - Session name for the role
+- **session_duration** (Required) - Duration in seconds (0-43200, default: 7200)
+- **policy** (Optional) - Policy to restrict permissions
+- **external_id** (Optional) - External ID for cross-account access (2-128 characters)
+
+**Environment Variables:**
+- `TENCENTCLOUD_ASSUME_ROLE_ARN`
+- `TENCENTCLOUD_ASSUME_ROLE_SESSION_NAME`
+- `TENCENTCLOUD_ASSUME_ROLE_SESSION_DURATION`
+- `TENCENTCLOUD_ASSUME_ROLE_EXTERNAL_ID`
+
+## Encryption
+
+### Server-Side Encryption
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket  = "terraform-state-1234567890"
+    region  = "ap-guangzhou"
+    encrypt = true
+  }
+}
+```
+
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `true`
+- **Description:** Enable server-side encryption of the state file
+
+## Access Control
+
+### ACL (Access Control List)
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket = "terraform-state-1234567890"
+    region = "ap-guangzhou"
+    acl    = "private"
+  }
+}
+```
+
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"private"`
+- **Valid Values:** `private`, `public-read`
+- **Description:** Object ACL to be applied to the state file
+
+## Custom Endpoints
+
+### endpoint
+- **Type:** String
+- **Optional:** Yes
+- **Environment Variable:** `TENCENTCLOUD_ENDPOINT`
+- **Description:** Custom endpoint for the COS API
+
+**Format:** `http(s)://cos-internal.{Region}.tencentcos.cn`
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket   = "terraform-state-1234567890"
+    region   = "ap-guangzhou"
+    endpoint = "http://cos-internal.ap-guangzhou.tencentcos.cn"
+  }
+}
+```
+
+Use internal endpoints when running within Tencent Cloud VPC for better performance and reduced costs.
+
+### domain
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"tencentcloudapi.com"`
+- **Environment Variable:** `TENCENTCLOUD_DOMAIN`
+- **Description:** The root domain of the API request
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket = "terraform-state-1234567890"
+    region = "ap-guangzhou"
+    domain = "tencentcloudapi.com"
+  }
+}
+```
+
+## Acceleration
+
+### accelerate
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `false`
+- **Description:** Enable global acceleration for the COS bucket
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket     = "terraform-state-1234567890"
+    region     = "ap-guangzhou"
+    accelerate = true
+  }
+}
+```
+
+When enabled, uses the global acceleration domain: `{bucket}.cos.accelerate.myqcloud.com`
+
+## Workspaces
+
+The COS backend supports workspaces. State files are stored at:
+
+```
+<prefix>/<workspace>/terraform.tfstate
+```
+
+For example:
+```
+terraform/state/default/terraform.tfstate
+terraform/state/dev/terraform.tfstate
+terraform/state/prod/terraform.tfstate
+```
+
+## Configuration Options Summary
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `bucket` | string | Yes | - | COS bucket name |
+| `region` | string | Yes | - | Tencent Cloud region |
+| `prefix` | string | No | `""` | State file directory prefix |
+| `key` | string | No | `terraform.tfstate` | State file name |
+| `secret_id` | string | No | - | Secret ID |
+| `secret_key` | string | No | - | Secret key |
+| `security_token` | string | No | - | Security token |
+| `cam_role_name` | string | No | - | CAM role name |
+| `profile` | string | No | - | Profile name |
+| `shared_credentials_dir` | string | No | `~/.tccli` | Credentials directory |
+| `encrypt` | bool | No | `true` | Enable encryption |
+| `acl` | string | No | `private` | Object ACL |
+| `endpoint` | string | No | - | COS endpoint |
+| `domain` | string | No | `tencentcloudapi.com` | API domain |
+| `accelerate` | bool | No | `false` | Enable acceleration |
+
+## Example: Production with Encryption and Assume Role
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket  = "prod-terraform-state-1234567890"
+    region  = "ap-guangzhou"
+    prefix  = "production/terraform/state"
+    key     = "terraform.tfstate"
+    encrypt = true
+    acl     = "private"
+    
+    # Authentication
+    secret_id  = "<secret-id>"
+    secret_key = "<secret-key>"
+    
+    # Assume Role
+    assume_role {
+      role_arn         = "qcs::cam::uin/100000000001:roleName/TerraformProductionRole"
+      session_name     = "terraform-prod"
+      session_duration = 7200
+    }
+  }
+}
+```
+
+## Example: Using CAM Role on CVM
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket        = "terraform-state-1234567890"
+    region        = "ap-beijing"
+    cam_role_name = "TerraformCVMRole"
+  }
+}
+```
+
+## Example: With Internal Endpoint and Acceleration
+
+```hcl
+terraform {
+  backend "cos" {
+    bucket     = "terraform-state-1234567890"
+    region     = "ap-shanghai"
+    endpoint   = "http://cos-internal.ap-shanghai.tencentcos.cn"
+    accelerate = false  # Don't use both internal endpoint and acceleration
+  }
+}
+```
+
+## CAM Policy Requirements
+
+Minimum permissions for the COS bucket:
+
+```json
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": [
+        "name/cos:GetObject",
+        "name/cos:PutObject",
+        "name/cos:DeleteObject",
+        "name/cos:HeadObject"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1234567890:terraform-state-1234567890/*"
+      ]
+    },
+    {
+      "effect": "allow",
+      "action": [
+        "name/cos:HeadBucket",
+        "name/cos:GetBucket"
+      ],
+      "resource": [
+        "qcs::cos:ap-guangzhou:uid/1234567890:terraform-state-1234567890"
+      ]
+    }
+  ]
+}
+```
+
+For tagging operations:
+
+```json
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": [
+        "name/tag:DescribeResourceTagsByResourceIds",
+        "name/tag:DescribeResourcesByTags"
+      ],
+      "resource": ["*"]
+    }
+  ]
+}
+```
+
+## State Locking
+
+The COS backend does not provide built-in state locking. For state locking, consider:
+
+1. Using a different backend that supports locking
+2. Implementing external locking with Tencent Cloud services
+3. Using Terraform Cloud/Enterprise
+
+## Best Practices
+
+1. **Enable encryption** for production state files
+2. **Use CAM roles** when running on CVM instances
+3. **Separate buckets** for different environments
+4. **Use internal endpoints** when running within Tencent Cloud VPC
+5. **Enable versioning** on the COS bucket for state history
+6. **Restrict bucket access** with appropriate ACLs and CAM policies
+7. **Use assume role** for cross-account access
+8. **Enable acceleration** for globally distributed teams (but not with internal endpoints)
+9. **Regular backups** of state files
+10. **Monitor bucket costs** and access patterns

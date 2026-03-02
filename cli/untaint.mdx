@@ -1,0 +1,52 @@
+---
+title: terraform untaint
+description: The terraform untaint command removes the tainted state from a resource instance.
+---
+
+# Command: untaint
+
+The `terraform untaint` command removes the "tainted" state from a resource instance, indicating that it is fully functional and does not need to be recreated.
+
+## Usage
+
+```bash
+terraform untaint [options] address
+```
+
+Terraform uses the term "tainted" to describe a resource instance which may not be fully functional, either because its creation partially failed or because you've manually marked it as such using the [`terraform taint`](/terraform/cli/commands/taint) command.
+
+This command removes that state from a resource instance, causing Terraform to see it as fully-functional and not in need of replacement.
+
+This will not modify your infrastructure directly. It only avoids Terraform planning to replace a tainted instance in a future operation.
+
+## Options
+
+- `-allow-missing` - If specified, the command will succeed (exit code 0) even if the resource is missing.
+
+- `-lock=false` - Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+
+- `-lock-timeout=DURATION` - Duration to retry a state lock. Default is `0s`.
+
+- `-ignore-remote-version` - A rare option used for the remote backend only. See the [remote backend documentation](/terraform/language/settings/backends/remote) for more information.
+
+For configurations using the [local backend](/terraform/language/settings/backends/local) only, `terraform untaint` also accepts the legacy options `-state`, `-state-out`, and `-backup`.
+
+## Example
+
+Remove the tainted state from a single instance:
+
+```bash
+terraform untaint aws_instance.example
+```
+
+Remove the tainted state from a specific instance in a resource with count:
+
+```bash
+terraform untaint 'aws_instance.example[0]'
+```
+
+Remove the tainted state from a resource in a module:
+
+```bash
+terraform untaint module.web_app.aws_instance.server
+```

@@ -1,0 +1,518 @@
+---
+title: Import Workflow
+description: Import existing infrastructure into Terraform state without modifying resources
+---
+
+## Overview
+
+The `terraform import` command brings existing infrastructure under Terraform management by creating state entries for resources that were created outside of Terraform. This is essential for adopting Terraform in environments with pre-existing infrastructure.
+
+## How Import Works
+
+Import reads the current state of a resource from the provider and writes it to Terraform state, without modifying the actual infrastructure.
+
+### Import Process
+
+From the implementation in `internal/command/import.go`:
+
+1. **Parse Target Address**: Convert resource address string to structured address
+2. **Validate Configuration**: Ensure target resource exists in configuration  
+3. **Acquire State Lock**: Lock state to prevent concurrent modifications
+4. **Call Provider**: Read resource from provider API
+5. **Write State**: Add resource to state file
+6. **Persist State**: Save updated state to backend
+7. **Release Lock**: Unlock state
+
+**Reference**: `internal/command/import.go:30-271`
+
+## Import Command Structure
+
+```bash
+terraform import [options] ADDRESS ID
+```
+
+- **ADDRESS**: Terraform resource address where the resource will be imported
+- **ID**: Provider-specific resource identifier
+
+### Example Imports
+
+```bash
+# AWS EC2 instance
+terraform import aws_instance.web i-0123456789abcdef0
+
+# AWS VPC
+terraform import aws_vpc.main vpc-0a1b2c3d4e5f6g7h8
+
+# Module resource
+terraform import module.network.aws_subnet.private subnet-0a1b2c3d
+
+# Resource with count
+terraform import 'aws_instance.app[0]' i-0123456789abcdef0
+
+# Resource with for_each
+terraform import 'aws_instance.app["web"]' i-0123456789abcdef0
+```
+
+## Address Validation
+
+Import validates that the target address exists in configuration:
+
+```go
+// From internal/command/import.go:51
+traversal, travDiags := hclsyntax.ParseTraversalAbs(traversalSrc, "<import-address>", hcl.Pos{Line: 1, Column: 1})
+addr, addrDiags := addrs.ParseAbsResourceInstance(traversal)
+```
+
+**Reference**: `internal/command/import.go:51-68`
+
+### Resource Mode Validation
+
+Only managed resources can be imported:
+
+```go
+// From internal/command/import.go:70
+if addr.Resource.Resource.Mode != addrs.ManagedResourceMode {
+    diags = diags.Append(errors.New(
+        "A managed resource address is required. Importing into a data resource is not allowed."
+    ))
+}
+```
+
+You cannot import data sources.
+
+**Reference**: `internal/command/import.go:70-74`
+
+## Configuration Requirements
+
+### Resource Must Exist in Configuration
+
+Before importing, the resource block must exist:
+
+```go
+// From internal/command/import.go:98
+config, configDiags := c.loadConfig(parsedArgs.ConfigPath)
+// Verify that the given address points to something that exists in config
+targetConfig := config.DescendentForInstance(addr.Module)
+if targetConfig == nil {
+    diags = diags.Append(&hcl.Diagnostic{
+        Severity: hcl.DiagError,
+        Summary:  "Import to non-existent module",
+        // ...
+    })
+}
+```
+
+**Reference**: `internal/command/import.go:98-115`
+
+### Resource Block Example
+
+Create the resource block before importing:
+
+```hcl
+# Define empty resource block
+resource "aws_instance" "web" {
+  # Configuration will be filled in after import
+  # For now, just the block definition is required
+}
+```
+
+Then import:
+
+```bash
+terraform import aws_instance.web i-0123456789abcdef0
+```
+
+### Missing Resource Error
+
+If the resource block doesn't exist:
+
+```go
+// From internal/command/import.go:136
+if rc == nil {
+    c.Ui.Error(fmt.Sprintf(
+        importCommandMissingResourceFmt,
+        addr, modulePath, resourceRelAddr.Type, resourceRelAddr.Name,
+    ))
+    return 1
+}
+```
+
+Error message suggests creating the resource block:
+
+```
+Error: resource address "aws_instance.web" does not exist in the configuration.
+
+Before importing this resource, please add configuration for this resource.
+
+resource "aws_instance" "web" {
+  # (resource arguments)
+}
+```
+
+**Reference**: `internal/command/import.go:126-144`
+
+## Import Execution
+
+### Import Targets
+
+The import operation accepts a list of targets:
+
+```go
+// From internal/command/import.go:225
+newState, importDiags := lr.Core.Import(lr.Config, lr.InputState, &terraform.ImportOpts{
+    Targets: []*terraform.ImportTarget{
+        {
+            LegacyAddr: addr,
+            LegacyID:   parsedArgs.ID,
+        },
+    },
+    SetVariables: lr.PlanOpts.SetVariables,
+})
+```
+
+Currently limited to one target per command invocation.
+
+**Reference**: `internal/command/import.go:225-237`
+
+### State Persistence
+
+After successful import, state is written:
+
+```go
+// From internal/command/import.go:253
+log.Printf("[INFO] Writing state output to: %s", c.Meta.StateOutPath())
+if err := state.WriteState(newState); err != nil {
+    c.Ui.Error(fmt.Sprintf("Error writing state file: %s", err))
+    return 1
+}
+if err := state.PersistState(schemas); err != nil {
+    c.Ui.Error(fmt.Sprintf("Error writing state file: %s", err))
+    return 1
+}
+```
+
+**Reference**: `internal/command/import.go:253-261`
+
+## Import Command Options
+
+### Configuration Path
+
+```bash
+terraform import -config="path/to/config" aws_instance.web i-abc123
+```
+
+Specifies where to find Terraform configuration files.
+
+### Variable Values
+
+```bash
+terraform import -var="region=us-west-2" aws_instance.web i-abc123
+terraform import -var-file="prod.tfvars" aws_instance.web i-abc123
+```
+
+Provides variables needed by provider configuration.
+
+### State Locking
+
+```bash
+terraform import -lock=false aws_instance.web i-abc123
+terraform import -lock-timeout=5m aws_instance.web i-abc123
+```
+
+<Warning>
+Disabling state locking during import is dangerous if others might be modifying the state.
+</Warning>
+
+### Legacy Local Backend Options
+
+```bash
+terraform import -state="custom.tfstate" aws_instance.web i-abc123
+terraform import -state-out="new.tfstate" aws_instance.web i-abc123
+terraform import -backup="backup.tfstate" aws_instance.web i-abc123
+```
+
+These only work with the local backend.
+
+## Post-Import Workflow
+
+### 1. Verify Import
+
+After importing, verify the resource is in state:
+
+```bash
+terraform state show aws_instance.web
+```
+
+### 2. Generate Configuration
+
+Use the state to generate configuration:
+
+```bash
+terraform show -no-color | grep -A 50 'resource "aws_instance" "web"'
+```
+
+Or use `terraform state show` output as a reference:
+
+```bash
+terraform state show aws_instance.web
+```
+
+### 3. Update Configuration
+
+Add the actual configuration to match the imported resource:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+  
+  tags = {
+    Name = "web-server"
+  }
+  
+  # Add other attributes to match current state
+}
+```
+
+### 4. Plan to Verify
+
+Run plan to ensure configuration matches state:
+
+```bash
+terraform plan
+```
+
+Expect "No changes" if configuration matches imported state.
+
+### 5. Refine Configuration
+
+Adjust configuration to be more maintainable:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.ubuntu.id  # Use data source
+  instance_type = var.instance_type       # Use variable
+  
+  tags = merge(
+    var.common_tags,
+    {
+      Name = "web-server"
+    }
+  )
+}
+```
+
+## Importing Multiple Resources
+
+### Sequential Import
+
+```bash
+terraform import aws_vpc.main vpc-12345
+terraform import aws_subnet.public subnet-12345
+terraform import aws_subnet.private subnet-67890
+```
+
+### Import Script
+
+```bash
+#!/bin/bash
+
+# Import VPC and related resources
+terraform import aws_vpc.main vpc-0a1b2c3d
+terraform import aws_internet_gateway.main igw-0a1b2c3d
+
+# Import subnets
+for subnet_id in subnet-111 subnet-222 subnet-333; do
+  terraform import "aws_subnet.public[\"${subnet_id}\"]" "${subnet_id}"
+done
+```
+
+## Import Limitations
+
+### One Resource at a Time
+
+Import command handles one resource per invocation. For bulk imports, use scripts or tools like [Terraformer](https://github.com/GoogleCloudPlatform/terraformer).
+
+### No Configuration Generation
+
+Import only creates state entries. You must manually write or generate configuration.
+
+### Provider-Specific IDs
+
+Each provider defines its own ID format:
+
+```bash
+# AWS uses resource IDs
+terraform import aws_instance.web i-0123456789abcdef0
+
+# Google Cloud uses self_link
+terraform import google_compute_instance.web projects/my-project/zones/us-central1-a/instances/my-instance
+
+# Azure uses resource IDs
+terraform import azurerm_virtual_machine.web /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/mygroup/providers/Microsoft.Compute/virtualMachines/myvm
+```
+
+Consult provider documentation for ID formats.
+
+### Module Resources
+
+When importing into modules, include the module path:
+
+```bash
+terraform import module.vpc.aws_vpc.main vpc-0a1b2c3d
+terraform import 'module.app["web"].aws_instance.server' i-0123456789
+```
+
+## Import and Resource Dependencies
+
+Imported resources have empty dependency lists initially:
+
+```go
+// From internal/states/instance_object.go:70
+func NewResourceInstanceObjectFromIR(ir providers.ImportedResource) *ResourceInstanceObject {
+    return &ResourceInstanceObject{
+        Status:   ObjectReady,
+        Value:    ir.State,
+        Private:  ir.Private,
+        Identity: ir.Identity,
+        // Dependencies is empty
+    }
+}
+```
+
+Dependencies are rebuilt during the next apply.
+
+**Reference**: `internal/states/instance_object.go:70-77`
+
+## Import Error Handling
+
+### Invalid Address Format
+
+```
+Error: Invalid address
+
+The address "aws_instance" is not valid. Must be a resource instance address.
+
+For information on valid syntax, see:
+https://developer.hashicorp.com/terraform/cli/state/resource-addressing
+```
+
+### Resource Not Found by Provider
+
+```
+Error: Cannot import non-existent remote object
+
+While attempting to import an existing object to "aws_instance.web", 
+the provider detected that no object exists with the given id.
+```
+
+### Configuration Mismatch
+
+If imported state doesn't match configuration:
+
+```bash
+terraform plan
+```
+
+Shows differences:
+
+```
+Terraform will perform the following actions:
+
+  # aws_instance.web will be updated in-place
+  ~ resource "aws_instance" "web" {
+      ~ instance_type = "t2.micro" -> "t3.micro"
+      # ...
+    }
+```
+
+Update configuration to match or accept the change.
+
+## Import Best Practices
+
+<AccordionGroup>
+  <Accordion title="Import Before Terraform Manages">
+    Import existing resources before making Terraform changes to avoid accidental destruction.
+  </Accordion>
+  
+  <Accordion title="Test Import in Non-Production First">
+    Practice import workflow in development environments before production.
+  </Accordion>
+  
+  <Accordion title="Document Import Mapping">
+    Maintain documentation mapping resource addresses to provider IDs for reference.
+  </Accordion>
+  
+  <Accordion title="Use State Show to Generate Config">
+    Leverage `terraform state show` output as a starting point for configuration.
+  </Accordion>
+  
+  <Accordion title="Verify with Plan">
+    Always run `terraform plan` after import to verify configuration matches state.
+  </Accordion>
+  
+  <Accordion title="Import Dependencies Together">
+    Import related resources (VPC + subnets, instance + security groups) in logical groups.
+  </Accordion>
+  
+  <Accordion title="Use Version Control">
+    Commit state after successful imports to track import history.
+  </Accordion>
+</AccordionGroup>
+
+## Bulk Import Tools
+
+For importing many resources, consider these tools:
+
+### Terraformer
+
+```bash
+terraformer import aws --resources=vpc,subnet,instance --regions=us-east-1
+```
+
+Generates both state and configuration files.
+
+### terraform-import-github-organization
+
+```bash
+tf-import-github-org --org my-org
+```
+
+Imports entire GitHub organization resources.
+
+### Provider-Specific Tools
+
+Some providers offer import tools:
+- AWS: `former2` for generating CloudFormation and Terraform
+- Azure: `aztfexport` for exporting resources
+
+## Alternative: Import Blocks (Terraform 1.5+)
+
+Terraform 1.5 introduced `import` blocks for configuration-driven import:
+
+```hcl
+import {
+  to = aws_instance.web
+  id = "i-0123456789abcdef0"
+}
+
+resource "aws_instance" "web" {
+  # Configuration
+}
+```
+
+Run `terraform plan` to preview import, then `terraform apply` to execute.
+
+## Related Resources
+
+- [State Overview](/state/overview) - Core state concepts
+- [State Locking](/state/locking) - Lock behavior during import
+- [State Manipulation](/state/manipulation) - Managing imported resources
+
+## Source Code References
+
+- **Import Command**: `internal/command/import.go`
+- **Import Arguments**: `internal/command/arguments/import.go`
+- **Import from Provider**: `internal/states/instance_object.go:70-77`
+- **Address Parsing**: `internal/command/import.go:51-68`
+- **Configuration Validation**: `internal/command/import.go:98-144`

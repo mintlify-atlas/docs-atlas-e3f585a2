@@ -1,0 +1,323 @@
+---
+title: Initialize
+description: Learn how to initialize a Terraform working directory with terraform init, including provider installation, module setup, and backend configuration.
+---
+
+# Initialize
+
+The `terraform init` command prepares a working directory for use with Terraform. It is the first command you should run after writing a new Terraform configuration or cloning an existing one from version control.
+
+## What It Does
+
+`terraform init` performs several initialization steps:
+
+- **Downloads and installs provider plugins** required by your configuration
+- **Downloads and installs modules** referenced in your configuration
+- **Initializes the backend** for storing Terraform state
+- **Creates a dependency lock file** (`.terraform.lock.hcl`) to ensure consistent provider versions
+
+## When to Use It
+
+Run `terraform init` when:
+
+- Starting a new Terraform project
+- Cloning an existing Terraform configuration from version control
+- Adding or modifying provider requirements
+- Changing backend configuration
+- Adding or updating module sources
+- Switching between workspaces that use different backends
+
+## Getting Started
+
+<Steps>
+  <Step title="Navigate to your Terraform directory">
+    Change to the directory containing your Terraform configuration files:
+    
+    ```bash
+    cd /path/to/terraform/project
+    ```
+  </Step>
+
+  <Step title="Run terraform init">
+    Initialize the working directory:
+    
+    ```bash
+    terraform init
+    ```
+    
+    **Example output:**
+    
+    ```
+    Initializing the backend...
+    
+    Initializing provider plugins...
+    - Finding hashicorp/aws versions matching "~> 5.0"...
+    - Installing hashicorp/aws v5.31.0...
+    - Installed hashicorp/aws v5.31.0 (signed by HashiCorp)
+    
+    Terraform has created a lock file .terraform.lock.hcl to record the provider
+    selections it made above. Include this file in your version control repository
+    so that Terraform can guarantee to make the same selections by default when
+    you run "terraform init" in the future.
+    
+    Terraform has been successfully initialized!
+    
+    You may now begin working with Terraform. Try running "terraform plan" to see
+    any changes that are required for your infrastructure. All Terraform commands
+    should now work.
+    
+    If you ever set or change modules or backend configuration for Terraform,
+    rerun this command to reinitialize your working directory. If you forget, other
+    commands will detect it and remind you to do so if necessary.
+    ```
+  </Step>
+
+  <Step title="Verify initialization">
+    Check that the `.terraform` directory and `.terraform.lock.hcl` file were created:
+    
+    ```bash
+    ls -la
+    ```
+    
+    You should see:
+    - `.terraform/` - Contains downloaded providers and modules
+    - `.terraform.lock.hcl` - Dependency lock file (commit this to version control)
+  </Step>
+</Steps>
+
+## Common Flags and Options
+
+### Provider Installation
+
+**`-upgrade`**
+
+Upgrade all provider plugins to the latest versions that comply with version constraints:
+
+```bash
+terraform init -upgrade
+```
+
+**Example output:**
+```
+Upgrading modules...
+Upgrading provider plugins...
+- Finding hashicorp/aws versions matching "~> 5.0"...
+- Installing hashicorp/aws v5.32.0...
+- Installed hashicorp/aws v5.32.0 (signed by HashiCorp)
+```
+
+**`-plugin-dir=PATH`**
+
+Force plugin installation from a local directory instead of downloading from registries:
+
+```bash
+terraform init -plugin-dir=./terraform-plugins
+```
+
+### Backend Configuration
+
+**`-backend-config=PATH`** or **`-backend-config="KEY=VALUE"`**
+
+Provide backend configuration during initialization:
+
+```bash
+terraform init -backend-config="bucket=my-terraform-state"
+```
+
+Or use a backend configuration file:
+
+```bash
+terraform init -backend-config=backend.hcl
+```
+
+**`-reconfigure`**
+
+Reconfigure the backend, ignoring any saved configuration:
+
+```bash
+terraform init -reconfigure
+```
+
+**`-migrate-state`**
+
+Migrate state from a previous backend configuration to a new one:
+
+```bash
+terraform init -migrate-state
+```
+
+**Example output:**
+```
+Initializing the backend...
+Terraform detected that the backend type changed from "local" to "s3".
+
+Do you want to migrate all workspaces to "s3"?
+  Terraform will copy the state from the previous backend to the new backend.
+  
+  Enter a value: yes
+
+Successfully configured the backend "s3"!
+```
+
+### Dependency Lock File
+
+**`-lockfile=MODE`**
+
+Control how Terraform handles the dependency lock file. Valid modes:
+- `readonly` - Do not update the lock file (useful in CI/CD)
+- Default - Update the lock file if provider selections change
+
+```bash
+terraform init -lockfile=readonly
+```
+
+**Example output when lock file is out of date:**
+```
+Error: Provider dependency changes detected
+
+Changes to the required provider dependencies were detected, but the lock file
+is read-only. To use and record these requirements, run "terraform init"
+without the "-lockfile=readonly" flag.
+```
+
+### Other Options
+
+**`-input=false`**
+
+Disable interactive prompts:
+
+```bash
+terraform init -input=false
+```
+
+**`-no-color`**
+
+Disable color output:
+
+```bash
+terraform init -no-color
+```
+
+## Best Practices
+
+### Version Control
+
+**Commit the lock file:**
+```bash
+git add .terraform.lock.hcl
+git commit -m "Add Terraform dependency lock file"
+```
+
+The `.terraform.lock.hcl` file ensures all team members and CI/CD systems use the same provider versions.
+
+**Ignore the .terraform directory:**
+
+Add to `.gitignore`:
+```
+.terraform/
+```
+
+This directory contains downloaded plugins and should not be committed.
+
+### CI/CD Pipelines
+
+In automated environments, use appropriate flags to prevent interactive prompts and ensure reproducibility:
+
+```bash
+terraform init -input=false -lockfile=readonly
+```
+
+### Backend Migration
+
+When migrating backends, always:
+1. Backup your state file before running `init`
+2. Use `-migrate-state` to copy state to the new backend
+3. Verify the state was migrated correctly before destroying the old backend
+
+```bash
+# Backup current state
+cp terraform.tfstate terraform.tfstate.backup
+
+# Migrate to new backend
+terraform init -migrate-state
+
+# Verify state
+terraform state list
+```
+
+### Module Updates
+
+When updating module sources, use `-upgrade` to fetch the latest versions:
+
+```bash
+terraform init -upgrade
+```
+
+### Provider Version Constraints
+
+Always specify version constraints in your configuration to ensure stability:
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+### Provider Installation Failures
+
+If provider installation fails:
+
+```
+Error: Failed to query available provider packages
+
+Could not retrieve the list of available versions for provider
+hashicorp/aws: no available releases match the given constraints
+```
+
+**Solution:** Check your version constraints and network connectivity.
+
+### Lock File Conflicts
+
+If you see warnings about incomplete lock file information:
+
+```
+Warning: Incomplete lock file information for providers
+
+Due to your customized provider installation methods, Terraform was forced to
+calculate lock file checksums locally for the following providers:
+  - hashicorp/aws
+```
+
+**Solution:** Run `terraform providers lock` to generate checksums for multiple platforms:
+
+```bash
+terraform providers lock \
+  -platform=linux_amd64 \
+  -platform=darwin_amd64 \
+  -platform=windows_amd64
+```
+
+### Backend Configuration Errors
+
+If backend initialization fails:
+
+```
+Error: Failed to get existing workspaces: S3 bucket does not exist.
+```
+
+**Solution:** Ensure your backend resources (S3 bucket, DynamoDB table, etc.) exist before running `init`.
+
+## Next Steps
+
+After successful initialization:
+
+1. Run `terraform plan` to preview infrastructure changes
+2. Run `terraform apply` to create or update infrastructure
+3. Use `terraform workspace` commands to manage multiple environments

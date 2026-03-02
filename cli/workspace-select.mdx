@@ -1,0 +1,97 @@
+---
+title: terraform workspace select
+description: The terraform workspace select command switches to a different workspace.
+---
+
+# terraform workspace select
+
+The `terraform workspace select` command switches to a different workspace.
+
+## Usage
+
+```bash
+terraform [global options] workspace select [OPTIONS] NAME
+```
+
+## Description
+
+This command switches the currently active workspace to the workspace specified by `NAME`. The workspace must already exist unless the `-or-create` flag is used.
+
+Switching workspaces changes which state file Terraform uses for subsequent operations. Each workspace maintains its own state, allowing you to manage multiple environments or configurations from the same Terraform code.
+
+## Arguments
+
+- `NAME` - (Required) The name of the workspace to select. Must be a valid workspace name containing only URL-safe characters with no path separators.
+
+## Options
+
+- `-or-create` - If the specified workspace doesn't exist, create it before selecting it. Default: `false`
+
+## Examples
+
+### Switch to an Existing Workspace
+
+```bash
+terraform workspace select production
+```
+
+Output:
+```
+Switched to workspace "production".
+```
+
+### Create and Switch to a New Workspace
+
+```bash
+terraform workspace select -or-create staging
+```
+
+If the workspace doesn't exist, it will be created:
+```
+Created and switched to workspace "staging"!
+
+You're now on a new, empty workspace. Workspaces isolate their state,
+so if you run "terraform plan" Terraform will not see any existing state
+for this configuration.
+```
+
+## Behavior Notes
+
+### Workspace Override
+
+You cannot use `terraform workspace select` when the `TF_WORKSPACE` environment variable is set. If you attempt to do so, the command will fail with:
+
+```
+The selected workspace is currently overridden using the TF_WORKSPACE
+environment variable.
+
+To select a new workspace, either update this environment variable or unset
+it and then run this command again.
+```
+
+### Selecting Current Workspace
+
+If you select the workspace that is already active, the command succeeds immediately without making any changes.
+
+### Non-existent Workspace
+
+If you attempt to select a workspace that doesn't exist (without using `-or-create`), the command will fail:
+
+```
+Workspace "staging" doesn't exist.
+
+You can create this workspace with the "new" subcommand
+or include the "-or-create" flag with the "select" subcommand.
+```
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error (e.g., workspace doesn't exist, backend failed to load, workspace name is invalid, TF_WORKSPACE is set)
+
+## Related Commands
+
+- [terraform workspace list](/cli/workspace-list) - List all workspaces
+- [terraform workspace new](/cli/workspace-new) - Create a new workspace
+- [terraform workspace show](/cli/workspace-show) - Show the current workspace name
+- [terraform workspace delete](/cli/workspace-delete) - Delete a workspace

@@ -1,0 +1,164 @@
+---
+title: Local Backend
+description: Store Terraform state on the local filesystem.
+---
+
+# Local Backend
+
+The **local** backend stores state on the local filesystem, locks that state using system APIs, and performs operations locally.
+
+## Implementation
+
+Location: `/internal/backend/local/backend.go`
+
+## Use Cases
+
+- Single-user workflows
+- Development and testing
+- Quick prototyping
+- Learning Terraform
+
+## Configuration
+
+```hcl
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+}
+```
+
+## Configuration Options
+
+### path
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"terraform.tfstate"`
+- **Description:** Path where the state file will be stored
+
+The state file is read from and written to this path. If you use a relative path, it is resolved relative to the current working directory.
+
+```hcl
+terraform {
+  backend "local" {
+    path = "states/dev.tfstate"
+  }
+}
+```
+
+### workspace_dir
+- **Type:** String
+- **Optional:** Yes  
+- **Default:** `"terraform.tfstate.d"`
+- **Description:** Directory where workspace state files are stored
+
+For non-default workspaces, state files are stored in:
+```
+<workspace_dir>/<workspace_name>/terraform.tfstate
+```
+
+```hcl
+terraform {
+  backend "local" {
+    workspace_dir = "workspaces"
+  }
+}
+```
+
+## Default File Paths
+
+The local backend uses these default paths:
+
+- **State file:** `terraform.tfstate`
+- **Backup file:** `terraform.tfstate.backup`
+- **Workspace directory:** `terraform.tfstate.d`
+
+These constants are defined in `/internal/backend/local/backend.go:27-32`:
+
+```go
+const (
+    DefaultWorkspaceDir    = "terraform.tfstate.d"
+    DefaultWorkspaceFile   = "environment"
+    DefaultStateFilename   = "terraform.tfstate"
+    DefaultBackupExtension = ".backup"
+)
+```
+
+## Workspaces
+
+The local backend supports multiple workspaces. Each workspace maintains its own state file:
+
+```bash
+# Create a new workspace
+terraform workspace new development
+
+# State stored at: terraform.tfstate.d/development/terraform.tfstate
+```
+
+The default workspace uses the main `path` setting, while other workspaces use subdirectories in `workspace_dir`.
+
+## State Locking
+
+The local backend automatically locks state during operations that could write state. The locking mechanism varies by operating system but typically uses file locks.
+
+## Backup Files
+
+Before writing new state, the local backend creates a backup of the previous state:
+
+- **Default backup path:** `<state_path>.backup`
+- **Disable backups:** Not supported for local backend
+
+## Command-Line Overrides
+
+Certain Terraform commands accept flags that override the backend configuration:
+
+- **`-state=path`** - Override state file path (read location)
+- **`-state-out=path`** - Override state output path (write location)
+- **`-backup=path`** - Override backup file path
+
+These are set via `OverrideStatePath`, `OverrideStateOutPath`, and `OverrideStateBackupPath` fields (lines 62-70).
+
+**Note:** These flags are NOT accepted by `terraform init`.
+
+## Remote State with Local Operations
+
+The local backend can wrap another backend for state storage while performing operations locally:
+
+```go
+func NewWithBackend(backend backend.Backend) *Local {
+    return &Local{
+        Backend: backend,
+    }
+}
+```
+
+This allows "upgrading" a non-operations backend to perform local operations while storing state remotely.
+
+## Example: Separate State and Backup Paths
+
+```hcl
+terraform {
+  backend "local" {
+    path = "state/terraform.tfstate"
+  }
+}
+```
+
+With this configuration:
+- State is stored at: `state/terraform.tfstate`
+- Backups are stored at: `state/terraform.tfstate.backup`
+
+## Limitations
+
+1. **No collaboration** - State is only accessible on the local machine
+2. **No remote locking** - Locking only prevents concurrent local operations
+3. **Risk of loss** - State is not backed up remotely
+4. **No version history** - Only one backup is maintained
+
+## Best Practices
+
+1. **Version control** - Do NOT commit state files to Git
+2. **Backups** - Regularly back up state files
+3. **Transition to remote** - Use remote backends for team environments
+4. **Workspace organization** - Use descriptive workspace names
+5. **Path consistency** - Use relative paths for portability

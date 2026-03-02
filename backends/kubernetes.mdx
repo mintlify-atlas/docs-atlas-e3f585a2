@@ -1,0 +1,381 @@
+---
+title: Kubernetes Backend
+description: Store Terraform state in Kubernetes Secrets with Lease-based locking.
+---
+
+# Kubernetes Backend
+
+The **Kubernetes** backend stores state in Kubernetes Secrets and uses Lease objects for state locking.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/kubernetes/backend.go`
+
+## Use Cases
+
+- Managing Kubernetes infrastructure from within the cluster
+- GitOps workflows with ArgoCD or Flux
+- Kubernetes-native CI/CD pipelines
+- Multi-tenancy with namespace isolation
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    namespace     = "terraform"
+  }
+}
+```
+
+## Required Configuration
+
+### secret_suffix
+- **Type:** String
+- **Required:** Yes
+- **Description:** Suffix used when creating the secret
+
+The secret is named: `tfstate-{workspace}-{secret_suffix}`
+
+**Important:** The suffix **must not end with** `-<number>`. The backend appends numeric indices when chunking large state files.
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "prod"  # Valid
+    # secret_suffix = "prod-1"  # Invalid - ends with -<number>
+  }
+}
+```
+
+## Optional Configuration
+
+### namespace
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"default"`
+- **Environment Variable:** `KUBE_NAMESPACE`
+- **Description:** Namespace where the secret will be stored
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    namespace     = "infrastructure"
+  }
+}
+```
+
+### labels
+- **Type:** Map of strings
+- **Optional:** Yes
+- **Description:** Additional labels to apply to the secret
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    labels = {
+      "app"         = "terraform"
+      "environment" = "production"
+      "managed-by"  = "terraform"
+    }
+  }
+}
+```
+
+## Authentication Methods
+
+The Kubernetes backend supports multiple authentication methods:
+
+### 1. In-Cluster Configuration
+
+For pods running inside Kubernetes:
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix      = "state"
+    in_cluster_config  = true
+  }
+}
+```
+
+**Environment Variable:** `KUBE_IN_CLUSTER_CONFIG`
+
+### 2. Kubeconfig File
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix    = "state"
+    load_config_file = true
+    config_path      = "~/.kube/config"
+  }
+}
+```
+
+**Environment Variables:**
+- `KUBE_LOAD_CONFIG_FILE` (default: `true`)
+- `KUBE_CONFIG_PATH`
+- `KUBE_CONFIG_PATHS` (colon-separated list)
+
+### 3. Multiple Config Files
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    config_paths  = [
+      "/path/to/config1",
+      "/path/to/config2"
+    ]
+  }
+}
+```
+
+**Environment Variable:** `KUBE_CONFIG_PATHS`
+
+### 4. Direct Configuration
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    
+    host                   = "https://kubernetes.example.com:6443"
+    token                  = "<service-account-token>"
+    cluster_ca_certificate = file("/path/to/ca.pem")
+  }
+}
+```
+
+### 5. Client Certificate Authentication
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    
+    host               = "https://kubernetes.example.com:6443"
+    client_certificate = file("/path/to/client.pem")
+    client_key         = file("/path/to/client-key.pem")
+  }
+}
+```
+
+**Environment Variables:**
+- `KUBE_CLIENT_CERT_DATA`
+- `KUBE_CLIENT_KEY_DATA`
+
+### 6. Username/Password Authentication
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    
+    host     = "https://kubernetes.example.com:6443"
+    username = "admin"
+    password = "password"
+  }
+}
+```
+
+**Environment Variables:**
+- `KUBE_USER`
+- `KUBE_PASSWORD`
+
+## Advanced Configuration
+
+### Context Selection
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    
+    config_context         = "production"
+    config_context_cluster = "prod-cluster"
+    config_context_auth_info = "prod-admin"
+  }
+}
+```
+
+**Environment Variables:**
+- `KUBE_CTX`
+- `KUBE_CTX_CLUSTER`
+- `KUBE_CTX_AUTH_INFO`
+
+### Exec Plugin Authentication
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", "my-cluster"]
+      env = {
+        AWS_PROFILE = "production"
+      }
+    }
+  }
+}
+```
+
+### Insecure TLS
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    host          = "https://kubernetes.example.com:6443"
+    insecure      = true
+  }
+}
+```
+
+**Environment Variable:** `KUBE_INSECURE` (default: `false`)
+
+**Warning:** Only use in development environments.
+
+### Proxy Configuration
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    proxy_url     = "http://proxy.example.com:8080"
+  }
+}
+```
+
+**Environment Variable:** `KUBE_PROXY_URL`
+
+## State Storage
+
+State is stored in Kubernetes Secrets:
+
+- **Secret name:** `tfstate-{workspace}-{secret_suffix}`
+- **Default workspace:** `tfstate-default-{secret_suffix}`
+- **Other workspaces:** `tfstate-{workspace}-{secret_suffix}`
+
+### Chunking
+
+Large state files are automatically chunked into multiple secrets:
+
+- `tfstate-{workspace}-{secret_suffix}-0`
+- `tfstate-{workspace}-{secret_suffix}-1`
+- `tfstate-{workspace}-{secret_suffix}-2`
+
+This is why `secret_suffix` cannot end with `-<number>`.
+
+## State Locking
+
+The backend uses Kubernetes Lease objects for locking:
+
+- **Lease name:** Matches the secret name
+- **Namespace:** Same as the secret
+- **Automatic renewal:** Leases are renewed during long operations
+
+## Configuration Options Summary
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `secret_suffix` | string | Yes | - | Suffix for secret name |
+| `namespace` | string | No | `default` | Kubernetes namespace |
+| `labels` | map(string) | No | `{}` | Labels for the secret |
+| `in_cluster_config` | bool | No | `false` | Use in-cluster config |
+| `load_config_file` | bool | No | `true` | Load kubeconfig file |
+| `config_path` | string | No | - | Path to kubeconfig |
+| `config_paths` | list(string) | No | - | Multiple kubeconfig paths |
+| `config_context` | string | No | - | Kubeconfig context |
+| `config_context_auth_info` | string | No | - | Auth info name |
+| `config_context_cluster` | string | No | - | Cluster name |
+| `host` | string | No | - | Kubernetes API server URL |
+| `username` | string | No | - | Basic auth username |
+| `password` | string | No | - | Basic auth password |
+| `token` | string | No | - | Service account token |
+| `client_certificate` | string | No | - | Client certificate PEM |
+| `client_key` | string | No | - | Client key PEM |
+| `cluster_ca_certificate` | string | No | - | CA certificate PEM |
+| `insecure` | bool | No | `false` | Skip TLS verification |
+| `proxy_url` | string | No | - | Proxy server URL |
+
+## Example: In-Cluster with Service Account
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix     = "state"
+    in_cluster_config = true
+    namespace         = "terraform"
+    
+    labels = {
+      "app" = "terraform"
+    }
+  }
+}
+```
+
+## Example: EKS with AWS IAM Authenticator
+
+```hcl
+terraform {
+  backend "kubernetes" {
+    secret_suffix = "state"
+    namespace     = "terraform"
+    
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args = [
+        "eks",
+        "get-token",
+        "--cluster-name",
+        "my-eks-cluster"
+      ]
+    }
+  }
+}
+```
+
+## RBAC Requirements
+
+The service account or user needs these permissions:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: terraform-backend
+  namespace: terraform
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "create", "update", "delete"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "create", "update", "delete"]
+```
+
+## Best Practices
+
+1. **Use namespaces** to isolate different teams or environments
+2. **Apply labels** for organization and filtering
+3. **RBAC policies** with minimal required permissions
+4. **In-cluster config** for pods, kubeconfig for external access
+5. **Service accounts** instead of user credentials
+6. **Monitor secret size** - Kubernetes secrets have a 1MB limit
+7. **Descriptive suffixes** to identify state purposes
+
+## Limitations
+
+1. **Secret size limit** - 1MB per secret (handled via chunking)
+2. **No built-in encryption** - Use encryption at rest in etcd
+3. **RBAC required** - Must have proper permissions
+4. **Namespace scoped** - Cannot share across namespaces easily

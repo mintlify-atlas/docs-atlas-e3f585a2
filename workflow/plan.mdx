@@ -1,0 +1,519 @@
+---
+title: Plan
+description: Generate and review Terraform execution plans to preview infrastructure changes before applying them.
+---
+
+# Plan
+
+The `terraform plan` command creates an execution plan that shows what actions Terraform will take to achieve the desired state defined in your configuration files. This command does not make any actual changes to your infrastructure.
+
+## What It Does
+
+When you run `terraform plan`, Terraform:
+
+- **Reads the current state** of your infrastructure
+- **Refreshes state** by querying real infrastructure (unless `-refresh=false`)
+- **Compares** the current state with your configuration
+- **Generates an execution plan** showing additions, changes, and deletions
+- **Validates** the configuration syntax and provider requirements
+
+## When to Use It
+
+`terraform plan` should be run:
+
+- Before applying any changes to verify what will happen
+- During code review to validate infrastructure changes
+- In CI/CD pipelines to detect configuration drift
+- After modifying Terraform configuration files
+- To generate a saved plan file for later application
+- To preview the impact of `-target` or `-replace` flags
+
+## Basic Usage
+
+<Steps>
+  <Step title="Run terraform plan">
+    Generate an execution plan:
+    
+    ```bash
+    terraform plan
+    ```
+    
+    **Example output:**
+    
+    ```
+    Terraform used the selected providers to generate the following execution
+    plan. Resource actions are indicated with the following symbols:
+      + create
+      ~ update in-place
+      - destroy
+    
+    Terraform will perform the following actions:
+    
+      # aws_instance.web will be created
+      + resource "aws_instance" "web" {
+          + ami                          = "ami-0c55b159cbfafe1f0"
+          + instance_type                = "t2.micro"
+          + availability_zone            = (known after apply)
+          + id                           = (known after apply)
+          + private_ip                   = (known after apply)
+          + public_ip                    = (known after apply)
+          + subnet_id                    = (known after apply)
+        }
+    
+      # aws_security_group.web will be updated in-place
+      ~ resource "aws_security_group" "web" {
+          id          = "sg-0123456789abcdef"
+          name        = "web-sg"
+          ~ description = "Old description" -> "New description"
+        }
+    
+    Plan: 1 to add, 1 to change, 0 to destroy.
+    ```
+  </Step>
+
+  <Step title="Review the plan">
+    Carefully review:
+    - **Resources to be created** (marked with `+`)
+    - **Resources to be modified** (marked with `~`)
+    - **Resources to be destroyed** (marked with `-`)
+    - **Resources to be replaced** (marked with `-/+`)
+    - **Output values** that will change
+  </Step>
+
+  <Step title="Check for errors">
+    If there are errors, fix them before applying:
+    
+    ```
+    Error: Missing required argument
+    
+      on main.tf line 15, in resource "aws_instance" "web":
+      15: resource "aws_instance" "web" {
+    
+    The argument "ami" is required, but no definition was found.
+    ```
+  </Step>
+</Steps>
+
+## Saving Plans
+
+<Steps>
+  <Step title="Generate and save a plan">
+    Save the plan to a file for later application:
+    
+    ```bash
+    terraform plan -out=tfplan
+    ```
+    
+    **Example output:**
+    ```
+    Plan: 3 to add, 1 to change, 0 to destroy.
+    
+    Saved the plan to: tfplan
+    
+    To perform exactly these actions, run the following command to apply:
+        terraform apply "tfplan"
+    ```
+  </Step>
+
+  <Step title="Inspect the saved plan (optional)">
+    View the saved plan in human-readable format:
+    
+    ```bash
+    terraform show tfplan
+    ```
+    
+    Or as JSON for automation:
+    
+    ```bash
+    terraform show -json tfplan | jq .
+    ```
+  </Step>
+
+  <Step title="Apply the saved plan">
+    Execute exactly what was planned:
+    
+    ```bash
+    terraform apply tfplan
+    ```
+    
+    **Note:** When applying a saved plan, Terraform will not prompt for approval.
+  </Step>
+</Steps>
+
+## Common Flags and Options
+
+### Plan Customization
+
+**`-destroy`**
+
+Generate a plan to destroy all managed infrastructure:
+
+```bash
+terraform plan -destroy
+```
+
+**Example output:**
+```
+Terraform will perform the following actions:
+
+  # aws_instance.web will be destroyed
+  - resource "aws_instance" "web" {
+      - ami                  = "ami-0c55b159cbfafe1f0" -> null
+      - instance_type        = "t2.micro" -> null
+      # ... other attributes
+    }
+
+Plan: 0 to add, 0 to change, 5 to destroy.
+```
+
+**`-refresh-only`**
+
+Generate a plan that only updates the state to match real infrastructure:
+
+```bash
+terraform plan -refresh-only
+```
+
+**Example output:**
+```
+Terraform will perform the following actions:
+
+  # aws_instance.web will be updated to reflect real infrastructure
+  ~ resource "aws_instance" "web" {
+      ~ tags = {
+          + "Environment" = "production"  # detected in AWS
+        }
+    }
+
+This is a refresh-only plan. Terraform will not take any actions to undo
+these detected changes, but will update the state file.
+```
+
+**`-refresh=false`**
+
+Skip refreshing state from real infrastructure (faster, but potentially inaccurate):
+
+```bash
+terraform plan -refresh=false
+```
+
+**Use case:** When you know the state is current and want faster plan generation.
+
+### Targeting Specific Resources
+
+**`-target=RESOURCE`**
+
+Limit planning to specific resources and their dependencies:
+
+```bash
+terraform plan -target=aws_instance.web
+```
+
+**Example output:**
+```
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Warning: Resource targeting is in effect
+
+You are creating a plan with the -target option, which means that the result
+of this plan may not represent all of the changes requested by the current
+configuration.
+```
+
+**Multiple targets:**
+```bash
+terraform plan \
+  -target=aws_instance.web \
+  -target=aws_security_group.web
+```
+
+**`-replace=RESOURCE`**
+
+Plan to replace a specific resource instead of updating it:
+
+```bash
+terraform plan -replace=aws_instance.web
+```
+
+**Example output:**
+```
+  # aws_instance.web will be replaced, as requested
+-/+ resource "aws_instance" "web" {
+      ~ id                  = "i-0123456789abcdef" -> (known after apply)
+      # ... rest of resource
+    }
+
+Plan: 1 to add, 0 to change, 1 to destroy.
+```
+
+### Variables
+
+**`-var`**
+
+Set input variable values from the command line:
+
+```bash
+terraform plan -var="environment=production" -var="instance_count=3"
+```
+
+**`-var-file`**
+
+Load variable values from a file:
+
+```bash
+terraform plan -var-file="production.tfvars"
+```
+
+**Example production.tfvars:**
+```hcl
+environment    = "production"
+instance_count = 5
+instance_type  = "t3.large"
+```
+
+### Output Options
+
+**`-out=FILE`**
+
+Save the plan to a file:
+
+```bash
+terraform plan -out=production.tfplan
+```
+
+**`-detailed-exitcode`**
+
+Return different exit codes based on plan results:
+- `0` - No changes needed (plan is empty)
+- `1` - Error occurred
+- `2` - Successful plan with changes
+
+```bash
+terraform plan -detailed-exitcode
+echo $?  # Check exit code
+```
+
+**Use case:** Useful in CI/CD to detect when changes are needed.
+
+**`-compact-warnings`**
+
+Show warnings in compact form:
+
+```bash
+terraform plan -compact-warnings
+```
+
+**`-no-color`**
+
+Disable colored output (useful for logging):
+
+```bash
+terraform plan -no-color
+```
+
+### State Management
+
+**`-lock=false`**
+
+Disable state locking (dangerous in team environments):
+
+```bash
+terraform plan -lock=false
+```
+
+**Warning:** Only use when you're certain no one else is running Terraform.
+
+**`-lock-timeout=DURATION`**
+
+Wait for a state lock:
+
+```bash
+terraform plan -lock-timeout=10m
+```
+
+### Advanced Options
+
+**`-parallelism=N`**
+
+Limit concurrent operations (default is 10):
+
+```bash
+terraform plan -parallelism=20
+```
+
+**`-input=false`**
+
+Disable interactive prompts:
+
+```bash
+terraform plan -input=false
+```
+
+## Best Practices
+
+### Always Plan Before Apply
+
+Never apply changes without reviewing a plan:
+
+```bash
+# Good practice
+terraform plan -out=tfplan
+terraform apply tfplan
+
+# Risky practice (skips review)
+terraform apply -auto-approve
+```
+
+### Use Saved Plans in CI/CD
+
+In automated pipelines, generate and save plans for review:
+
+```bash
+# CI job: Generate plan
+terraform plan -out=tfplan -input=false
+
+# Store plan artifact for review
+
+# CD job: Apply reviewed plan
+terraform apply tfplan
+```
+
+### Review Plans Carefully
+
+Check for:
+- **Unexpected deletions** (marked with `-`)
+- **Resource replacements** (marked with `-/+`) which may cause downtime
+- **Changes to critical resources** like databases
+- **Output values** that may expose sensitive data
+
+### Use Detailed Exit Codes in Automation
+
+Detect when infrastructure drift occurs:
+
+```bash
+terraform plan -detailed-exitcode
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "No changes needed"
+elif [ $EXIT_CODE -eq 1 ]; then
+  echo "Error occurred"
+  exit 1
+elif [ $EXIT_CODE -eq 2 ]; then
+  echo "Changes detected - review required"
+  # Trigger notification or approval workflow
+fi
+```
+
+### Combine with Version Control
+
+Review plans during pull requests:
+
+```bash
+# In PR pipeline
+terraform plan -no-color > plan.txt
+# Post plan.txt as PR comment
+```
+
+### Handle Sensitive Values
+
+Be cautious with plans containing sensitive data:
+
+```bash
+# Saved plans may contain sensitive values
+chmod 600 tfplan
+
+# Don't commit plan files to version control
+echo "*.tfplan" >> .gitignore
+```
+
+## Understanding Plan Output
+
+### Resource Actions
+
+| Symbol | Action | Description |
+|--------|--------|-------------|
+| `+` | Create | Resource will be created |
+| `-` | Destroy | Resource will be destroyed |
+| `~` | Update | Resource will be updated in-place |
+| `-/+` | Replace | Resource will be destroyed and recreated |
+| `<=` | Read | Data source will be read |
+
+### Attribute Changes
+
+```hcl
+~ resource "aws_instance" "web" {
+    id            = "i-0123456789abcdef"
+  ~ instance_type = "t2.micro" -> "t2.small"  # Change
+  + monitoring    = true                       # Addition
+  - user_data     = "..." -> null             # Removal
+    # (10 unchanged attributes hidden)
+  }
+```
+
+### Forces Replacement
+
+Some changes require resource replacement:
+
+```hcl
+-/+ resource "aws_instance" "web" {
+    ~ ami           = "ami-old" -> "ami-new" # forces replacement
+      # ... other attributes
+    }
+```
+
+### Known After Apply
+
+Attributes that will be determined during apply:
+
+```hcl
++ resource "aws_instance" "web" {
+    + id          = (known after apply)
+    + public_ip   = (known after apply)
+    }
+```
+
+## Troubleshooting
+
+### Plan Hangs
+
+If plan seems stuck:
+
+```bash
+# Enable debug logging
+TF_LOG=DEBUG terraform plan
+
+# Check if state is locked
+terraform force-unlock LOCK_ID
+```
+
+### Inconsistent State
+
+If you see errors about inconsistent state:
+
+```
+Error: Inconsistent dependency lock file
+```
+
+**Solution:**
+```bash
+terraform init -upgrade
+terraform plan
+```
+
+### Provider Version Conflicts
+
+```
+Error: Failed to query available provider packages
+```
+
+**Solution:** Check version constraints in `required_providers` block.
+
+## Next Steps
+
+After reviewing the plan:
+
+1. If the plan looks correct, proceed with `terraform apply`
+2. If changes are unexpected, modify your configuration and run `plan` again
+3. Save plans for audit purposes or approval workflows
+4. Use `terraform show` to inspect saved plans

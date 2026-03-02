@@ -1,0 +1,70 @@
+---
+title: terraform show
+description: The terraform show command displays the current state or a saved plan.
+---
+
+# Command: show
+
+The `terraform show` command is used to provide human-readable output from a state or plan file. This can be used to inspect a plan to ensure that the planned operations are expected, or to inspect the current state.
+
+## Usage
+
+```bash
+terraform show [options] [path]
+```
+
+Reads and outputs a Terraform state or plan file in a human-readable form. If no path is specified, the current state will be shown.
+
+## Options
+
+- `-no-color` - If specified, output won't contain any color.
+
+- `-json` - If specified, output the Terraform plan or state in a machine-readable JSON format.
+
+## JSON Output Format
+
+When the `-json` flag is used, the output is in a JSON format that is designed to be stable across Terraform versions. The JSON output contains the same information that the human-readable output does, but in a structured format that is easier for machines to parse.
+
+## Examples
+
+Show the current state:
+
+```bash
+terraform show
+```
+
+Show a saved plan:
+
+```bash
+terraform show tfplan
+```
+
+Show the current state in JSON format:
+
+```bash
+terraform show -json
+```
+
+Show a saved plan in JSON format:
+
+```bash
+terraform show -json tfplan
+```
+
+## Output with No Path
+
+When you run `terraform show` with no path argument, Terraform will display the state from the currently-selected workspace. If there is no state, the command will display an error.
+
+## Output for a Plan File
+
+When you run `terraform show` with the path to a plan file (created with `terraform plan -out=FILE`), Terraform will display:
+
+- The configuration snapshot used for the plan
+- The resource changes that the plan proposes
+- The output value changes that the plan proposes
+
+This is useful for reviewing a plan file before applying it with `terraform apply FILE`.
+
+## Output for a State File
+
+When you run `terraform show` with the path to a state file, Terraform will display the contents of that state file. This is useful when reviewing a state file that is not the current state of the selected workspace.

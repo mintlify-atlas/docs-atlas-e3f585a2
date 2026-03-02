@@ -1,0 +1,107 @@
+---
+title: Contributing to Terraform
+description: Learn how to contribute to Terraform Core, including guidelines for proposing changes, submitting pull requests, and working with the community.
+---
+
+## Introduction
+
+Terraform is a complex tool where even simple changes can have a serious impact on other areas of the code. The Terraform team takes stability seriously and appreciates the responsibility of maintaining software for a globally diverse community that relies on Terraform for workflows of all sizes and criticality.
+
+<Note>
+  All communication on GitHub, the community forum, and other HashiCorp-provided communication channels is subject to [the HashiCorp community guidelines](https://www.hashicorp.com/community-guidelines).
+</Note>
+
+## What is Terraform Core?
+
+This repository contains Terraform core, which includes:
+- The command line interface (CLI)
+- The main graph engine
+- Core language features
+
+Providers are implemented as separate plugins with their own repositories linked from the [Terraform Registry](https://registry.terraform.io/browse/providers).
+
+## How to Contribute
+
+### Report Bugs and Request Features
+
+The most straightforward way to help is to [file a feature request or bug report](https://github.com/hashicorp/terraform/issues/new/choose). Please use the appropriate issue template and fill in all requested information to maximize the team's ability to act on your feedback.
+
+### Make Code Contributions
+
+If you want to implement a solution yourself:
+
+1. **Discuss first**: Before writing code, discuss your proposed solution with the core team on the GitHub issue. This ensures your approach aligns with project goals and avoids unintended consequences.
+
+2. **Start small**: New contributors should begin with:
+   - Documentation improvements (can be done entirely in GitHub)
+   - Provider bug fixes (great first step in the ecosystem)
+   - Peripheral areas like functions or backends (less interaction with core)
+
+3. **Avoid core changes initially**: Changes to the graph engine and core language features are more difficult to contribute and require extensive discussion.
+
+<Warning>
+  Do not invest significant development time without discussing your approach with the Terraform team first. Some proposals may not be workable due to unforeseen consequences.
+</Warning>
+
+## Areas of Special Concern
+
+### State Storage Backends
+
+The Terraform team is **not merging PRs for new state storage backends**. The priority is finding maintainers for existing backends and removing those without maintainers.
+
+Backends fall into three categories:
+- **Core team maintained**: (e.g., HTTP) - Contributions unlikely to be accepted quickly
+- **HashiCorp provider teams**: (e.g., AWS S3, Azure) - Reviewed irregularly, typically every few months
+- **Third-party maintained**: (e.g., Postgres, COS) - Reviewed by maintainers, then merged by core team
+
+See the [CODEOWNERS](https://github.com/hashicorp/terraform/blob/main/CODEOWNERS) file for backend maintainer status.
+
+### Provisioners
+
+Provisioners are often used in place of configuration management tools or custom providers. Tool-specific provisioners (`chef`, `habitat`, `puppet`, `salt-masterless`) are **deprecated**, and PRs for these areas will not be accepted.
+
+<Info>
+  From the Terraform documentation: Provisioners "add a considerable amount of complexity and uncertainty to Terraform usage" and should be used only as a last resort.
+</Info>
+
+## Proposing Changes
+
+To be respectful of community contributors' time:
+
+1. **Check for existing issues**: Look for GitHub issues that already cover your bug or enhancement
+2. **Start a discussion**: Create or comment on an issue before investing development time
+3. **Mention your intent**: Let the team know you plan to implement the change
+4. **Wait for feedback**: The team will prioritize providing implementation guidance
+
+<Note>
+  Terraform does not currently have a formal process for reviewing outside proposals that significantly change Terraform's workflow, primary usage patterns, or language. Start with an issue-based proposal for any substantial changes.
+</Note>
+
+### What to Expect
+
+- **Large proposals**: For significant design changes, the team may not be able to give prompt feedback but is still interested in hearing about use cases
+- **Minor text changes**: Comment and help text changes are not normally accepted
+- **Documentation and tests**: Most changes require updates to both the test suite and documentation
+
+## Community Resources
+
+- **GitHub Issues**: [Report bugs and request features](https://github.com/hashicorp/terraform/issues)
+- **Community Forum**: [Ask questions and discuss](https://discuss.hashicorp.com/c/terraform-core/27)
+- **CODEOWNERS**: [View maintainer assignments](https://github.com/hashicorp/terraform/blob/main/CODEOWNERS)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Building from Source" icon="hammer" href="/contributing/building">
+    Learn how to build Terraform from source code
+  </Card>
+  <Card title="Running Tests" icon="flask" href="/contributing/testing">
+    Understand the testing requirements and workflows
+  </Card>
+  <Card title="Pull Request Guidelines" icon="code-pull-request" href="/contributing/pull-requests">
+    Learn the PR lifecycle and best practices
+  </Card>
+  <Card title="Bug Report Process" icon="bug" href="/contributing/bug-reports">
+    Understand how bug reports are triaged
+  </Card>
+</CardGroup>

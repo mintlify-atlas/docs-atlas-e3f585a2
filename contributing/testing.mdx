@@ -1,0 +1,304 @@
+---
+title: Testing Terraform
+description: Learn how to run tests, write test cases, and understand Terraform's testing requirements for contributions.
+---
+
+## Overview
+
+Testing is a critical part of contributing to Terraform. All pull requests must pass tests before being merged, and most changes require updates to the test suite.
+
+## Running Tests
+
+### Unit Tests
+
+Run the full unit test suite:
+
+```bash
+go test ./...
+```
+
+<Info>
+  The unit test suite is self-contained, using mocks and local files to ensure it can run offline and isn't broken by external system changes.
+</Info>
+
+### Test Specific Packages
+
+For faster iteration, test only the package you're working on:
+
+```bash
+# Single package
+go test ./internal/addrs
+
+# Package tree
+go test ./internal/command/...
+```
+
+### Verbose Output
+
+Get detailed test output:
+
+```bash
+go test -v ./internal/addrs
+```
+
+### Run Specific Tests
+
+Run a single test by name:
+
+```bash
+go test -run TestValidateName ./internal/addrs
+```
+
+## Acceptance Tests
+
+Acceptance tests interact with external services and are disabled by default.
+
+### Enable Acceptance Tests
+
+Set the `TF_ACC` environment variable:
+
+```bash
+TF_ACC=1 go test ./internal/initwd
+```
+
+<Warning>
+  Acceptance tests interact with real external services including:
+  - Terraform Registry
+  - HCP Terraform
+  - Provider installation mechanisms
+  - Terraform Enterprise
+</Warning>
+
+### Best Practices for Acceptance Tests
+
+1. **Focus on specific packages**: Only enable for the package you're testing
+2. **Run unchanged tests first**: Verify existing tests pass before making changes
+3. **Expect drift**: External systems may cause test failures unrelated to your changes
+4. **Handle failures**: Investigate whether failures are due to your changes or external drift
+
+### Example Workflow
+
+```bash
+# First, run tests in unchanged codebase
+TF_ACC=1 go test ./internal/initwd
+
+# Make your changes
+# ...
+
+# Run tests again to verify your changes
+TF_ACC=1 go test ./internal/initwd
+```
+
+## Equivalence Tests
+
+Equivalence tests are E2E tests that verify Terraform command output doesn't change unexpectedly.
+
+### What Are Equivalence Tests?
+
+These tests compare the output of Terraform commands before and after code changes. They help catch unintended behavioral changes.
+
+### Running Equivalence Tests
+
+Equivalence tests use the [terraform-equivalence-testing](https://github.com/hashicorp/terraform-equivalence-testing) framework:
+
+```bash
+# Download the terraform-equivalence-testing binary
+# Then run diff command
+terraform-equivalence-testing diff
+
+# Or update reference outputs
+terraform-equivalence-testing update
+```
+
+### Automated Equivalence Testing
+
+Equivalence tests run automatically in CI:
+- **On PR open**: Runs diff and comments with results
+- **On PR close**: Runs update and opens PR with new reference outputs
+
+<Info>
+  If no changes are detected, the equivalence testing process is invisible to PR authors.
+</Info>
+
+### Writing New Equivalence Tests
+
+Add new test cases to the `testing/equivalence-tests/tests` directory. Each test should be in a separate directory following the framework's guidelines.
+
+## Test Requirements for PRs
+
+Before submitting a pull request:
+
+### 1. Verify Existing Tests Pass
+
+```bash
+go test ./...
+```
+
+<Warning>
+  Pull requests with failing tests may not be reviewed. Ensure all tests pass before requesting review.
+</Warning>
+
+### 2. Add Tests for New Functionality
+
+New features require:
+- Unit tests for core functionality
+- Integration tests where appropriate
+- Acceptance tests if interacting with external services
+
+### 3. Update Tests for Changed Behavior
+
+If your changes affect existing functionality:
+- Update affected tests to match new behavior
+- Ensure test descriptions reflect the new expectations
+- Document why the change in behavior is correct
+
+## Code Coverage
+
+Generate code coverage reports:
+
+```bash
+# Generate coverage profile
+go test -coverprofile=coverage.out ./...
+
+# View coverage in browser
+go tool cover -html=coverage.out
+
+# View coverage summary
+go tool cover -func=coverage.out
+```
+
+## Benchmarking
+
+Run benchmark tests:
+
+```bash
+# Run benchmarks in a package
+go test -bench=. ./internal/addrs
+
+# Run specific benchmark
+go test -bench=BenchmarkParse ./internal/addrs
+
+# With memory allocation stats
+go test -bench=. -benchmem ./internal/addrs
+```
+
+## Common Testing Patterns
+
+### Table-Driven Tests
+
+Terraform uses table-driven tests extensively:
+
+```go
+func TestFunction(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    string
+        expected string
+        wantErr  bool
+    }{
+        {"valid input", "foo", "bar", false},
+        {"invalid input", "baz", "", true},
+    }
+    
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Test implementation
+        })
+    }
+}
+```
+
+### Using Test Fixtures
+
+Test data is stored in `testdata` directories:
+
+```go
+data, err := os.ReadFile("testdata/example.tf")
+```
+
+## Debugging Tests
+
+See the [Debugging](/contributing/debugging) guide for details on debugging tests in VS Code and other IDEs.
+
+Quick example for VS Code:
+
+```json
+{
+    "name": "Debug Test",
+    "type": "go",
+    "request": "launch",
+    "mode": "test",
+    "program": "${workspaceFolder}/internal/addrs",
+    "args": ["-test.run", "TestValidateName"]
+}
+```
+
+## Continuous Integration
+
+### PR Checks
+
+When you open a PR, the following checks run:
+
+1. **CLA**: Sign the Contributor License Agreement (first-time contributors)
+2. **Unit tests**: All tests must pass
+3. **Acceptance tests**: Tests that interact with external services
+4. **Change files**: Verify changelog entries or `no-changelog-needed` label
+5. **Vercel**: Internal tool (doesn't work for external contributors)
+
+### Test Parallelization
+
+Tests run in parallel by default. If you need to disable parallelism:
+
+```go
+func TestSomething(t *testing.T) {
+    t.Parallel() // Explicitly mark as parallel-safe
+}
+```
+
+Or disable parallelism:
+
+```bash
+go test -p 1 ./...
+```
+
+## Mock Testing
+
+Terraform uses [go-mock](https://github.com/uber-go/mock) for generating mocks:
+
+```bash
+# Generate mocks
+go generate ./...
+```
+
+Mock interfaces are defined in the codebase with `//go:generate` directives.
+
+## Performance Testing
+
+For performance-sensitive changes:
+
+1. Benchmark before and after your changes
+2. Compare results to ensure no regression
+3. Include benchmark results in PR description
+
+```bash
+# Save baseline
+go test -bench=. ./pkg > old.txt
+
+# Make changes, then compare
+go test -bench=. ./pkg > new.txt
+benchcmp old.txt new.txt
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Debugging" icon="bug" href="/contributing/debugging">
+    Learn how to debug tests and Terraform operations
+  </Card>
+  <Card title="Code Style" icon="code" href="/contributing/code-style">
+    Follow code style requirements for tests
+  </Card>
+  <Card title="Pull Requests" icon="code-pull-request" href="/contributing/pull-requests">
+    Submit your tested changes for review
+  </Card>
+</CardGroup>

@@ -1,0 +1,56 @@
+---
+title: terraform logout
+description: The terraform logout command removes locally-stored credentials for HCP Terraform or Terraform Enterprise.
+---
+
+# Command: logout
+
+The `terraform logout` command removes locally-stored credentials for a specified hostname.
+
+## Usage
+
+```bash
+terraform logout [hostname]
+```
+
+If no hostname is provided, the default hostname is `app.terraform.io`.
+
+This command removes the stored API token for the specified hostname from your local credentials file.
+
+<Note>
+The API token is only removed from local storage, not destroyed on the remote server. The token will remain valid on the server until manually revoked through the web interface.
+</Note>
+
+## What Gets Removed
+
+The `terraform logout` command removes credentials from your local CLI configuration file, typically located at:
+
+- On Linux and macOS: `~/.terraform.d/credentials.tfrc.json`
+- On Windows: `%APPDATA%\terraform.d\credentials.tfrc.json`
+
+If you're using a [credentials helper](/terraform/cli/config/config-file#credentials-helpers), the command will remove the credentials from that helper instead.
+
+## Example
+
+Log out from HCP Terraform:
+
+```bash
+terraform logout
+```
+
+Log out from a Terraform Enterprise instance:
+
+```bash
+terraform logout app.terraform.example.com
+```
+
+## Revoking Tokens
+
+To fully revoke a token (making it invalid on the server), you must manually revoke it through the web interface:
+
+- For HCP Terraform: Visit [app.terraform.io/app/settings/tokens](https://app.terraform.io/app/settings/tokens)
+- For Terraform Enterprise: Visit `https://YOUR_TFE_HOSTNAME/app/settings/tokens`
+
+## Manually Configured Credentials
+
+If credentials are manually configured in a CLI configuration file (not the default credentials file), `terraform logout` will display an error. You must manually remove the credentials block from the configuration file.

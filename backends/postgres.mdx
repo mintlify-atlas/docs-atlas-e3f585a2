@@ -1,0 +1,396 @@
+---
+title: Postgres Backend
+description: Store Terraform state in a PostgreSQL database.
+---
+
+# Postgres Backend
+
+The **Postgres** (PostgreSQL) backend stores state in a PostgreSQL database table with automatic schema management and state locking.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/pg/backend.go`
+
+## Use Cases
+
+- Existing PostgreSQL infrastructure
+- Teams already using PostgreSQL
+- Strong ACID compliance requirements
+- Integration with PostgreSQL-based applications
+- On-premises deployments with PostgreSQL
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str = "postgres://user:password@localhost/terraform_backend"
+  }
+}
+```
+
+## Required Configuration
+
+### conn_str
+- **Type:** String
+- **Optional:** Yes (if environment variable is set)
+- **Environment Variable:** `PG_CONN_STR`
+- **Description:** PostgreSQL connection string
+
+**Format:** `postgres://username:password@host:port/database?sslmode=require`
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str = "postgres://terraform:secret@db.example.com:5432/tfstate?sslmode=require"
+  }
+}
+```
+
+## Optional Configuration
+
+### schema_name
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"terraform_remote_state"`
+- **Environment Variable:** `PG_SCHEMA_NAME`
+- **Description:** Name of the PostgreSQL schema to use
+
+Terraform automatically creates this schema unless `skip_schema_creation` is enabled.
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str    = "postgres://user:password@localhost/terraform_backend"
+    schema_name = "production_state"
+  }
+}
+```
+
+### skip_schema_creation
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `false`
+- **Environment Variable:** `PG_SKIP_SCHEMA_CREATION`
+- **Description:** Skip automatic schema creation
+
+Set to `true` if the user doesn't have `CREATE SCHEMA` privilege.
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str             = "postgres://user:password@localhost/terraform_backend"
+    schema_name          = "existing_schema"
+    skip_schema_creation = true
+  }
+}
+```
+
+### skip_table_creation
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `false`
+- **Environment Variable:** `PG_SKIP_TABLE_CREATION`
+- **Description:** Skip automatic table creation
+
+Set to `true` if you want to create the table manually.
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str            = "postgres://user:password@localhost/terraform_backend"
+    skip_table_creation = true
+  }
+}
+```
+
+### skip_index_creation
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `false`
+- **Environment Variable:** `PG_SKIP_INDEX_CREATION`
+- **Description:** Skip automatic index creation
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str            = "postgres://user:password@localhost/terraform_backend"
+    skip_index_creation = true
+  }
+}
+```
+
+## Database Schema
+
+The backend automatically creates:
+
+### Schema
+
+```sql
+CREATE SCHEMA IF NOT EXISTS terraform_remote_state;
+```
+
+### Sequence
+
+```sql
+CREATE SEQUENCE IF NOT EXISTS public.global_states_id_seq AS bigint;
+```
+
+### Table
+
+```sql
+CREATE TABLE IF NOT EXISTS terraform_remote_state.states (
+    id bigint NOT NULL DEFAULT nextval('public.global_states_id_seq') PRIMARY KEY,
+    name text UNIQUE,
+    data text
+);
+```
+
+### Index
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS states_by_name 
+    ON terraform_remote_state.states (name);
+```
+
+## Connection String Format
+
+The connection string supports various formats:
+
+### Basic Format
+
+```
+postgres://username:password@host:port/database
+```
+
+### With SSL
+
+```
+postgres://username:password@host:port/database?sslmode=require
+```
+
+### SSL Modes
+
+- `disable` - No SSL
+- `require` - Require SSL (default)
+- `verify-ca` - Verify CA certificate
+- `verify-full` - Verify CA and hostname
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str = "postgres://user:pass@host/db?sslmode=verify-full"
+  }
+}
+```
+
+### Unix Socket
+
+```
+postgres://user:password@/database?host=/var/run/postgresql
+```
+
+### With Additional Parameters
+
+```
+postgres://user:pass@host/db?sslmode=require&connect_timeout=10&application_name=terraform
+```
+
+## Workspaces
+
+The Postgres backend supports workspaces. Each workspace is stored as a separate row:
+
+| name | data |
+|------|------|
+| `default` | `{state JSON}` |
+| `development` | `{state JSON}` |
+| `production` | `{state JSON}` |
+
+## State Locking
+
+The Postgres backend uses PostgreSQL's advisory locks for state locking:
+
+- Automatic locking during state-modifying operations
+- Database-level locking ensures consistency
+- Locks are automatically released on connection close
+
+## Configuration Options Summary
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `conn_str` | string | Yes* | - | PostgreSQL connection string |
+| `schema_name` | string | No | `terraform_remote_state` | Schema name |
+| `skip_schema_creation` | bool | No | `false` | Skip schema creation |
+| `skip_table_creation` | bool | No | `false` | Skip table creation |
+| `skip_index_creation` | bool | No | `false` | Skip index creation |
+
+*Required unless `PG_CONN_STR` environment variable is set.
+
+## Example: Development Setup
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str = "postgres://terraform:dev_password@localhost:5432/terraform_dev"
+    schema_name = "dev_state"
+  }
+}
+```
+
+## Example: Production with SSL
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str = "postgres://terraform:prod_password@db.example.com:5432/terraform_prod?sslmode=verify-full&sslcert=/etc/terraform/client.crt&sslkey=/etc/terraform/client.key&sslrootcert=/etc/terraform/ca.crt"
+    schema_name = "production_state"
+  }
+}
+```
+
+## Example: Using Environment Variable
+
+```bash
+export PG_CONN_STR="postgres://terraform:password@localhost/terraform_backend"
+export PG_SCHEMA_NAME="my_team_state"
+```
+
+```hcl
+terraform {
+  backend "pg" {
+    # Configuration from environment variables
+  }
+}
+```
+
+## Example: Manual Schema Management
+
+If you don't have `CREATE SCHEMA` privileges:
+
+**1. DBA creates schema and grants permissions:**
+
+```sql
+CREATE SCHEMA terraform_state;
+GRANT ALL ON SCHEMA terraform_state TO terraform_user;
+GRANT ALL ON ALL TABLES IN SCHEMA terraform_state TO terraform_user;
+GRANT USAGE ON SEQUENCE public.global_states_id_seq TO terraform_user;
+```
+
+**2. Terraform configuration:**
+
+```hcl
+terraform {
+  backend "pg" {
+    conn_str             = "postgres://terraform_user:password@host/db"
+    schema_name          = "terraform_state"
+    skip_schema_creation = true
+  }
+}
+```
+
+## Required Database Permissions
+
+### Minimum Permissions (Auto-create)
+
+```sql
+-- For automatic schema/table creation
+GRANT CREATE ON DATABASE terraform_backend TO terraform_user;
+
+-- Or grant schema creation privilege
+GRANT CREATE ON SCHEMA public TO terraform_user;
+```
+
+### Minimum Permissions (Manual setup)
+
+```sql
+-- After schema and table are created
+GRANT USAGE ON SCHEMA terraform_remote_state TO terraform_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON terraform_remote_state.states TO terraform_user;
+GRANT USAGE ON SEQUENCE public.global_states_id_seq TO terraform_user;
+```
+
+## Database Setup Best Practices
+
+### 1. Create Dedicated Database
+
+```sql
+CREATE DATABASE terraform_backend;
+```
+
+### 2. Create Dedicated User
+
+```sql
+CREATE USER terraform WITH PASSWORD 'secure_password';
+GRANT ALL PRIVILEGES ON DATABASE terraform_backend TO terraform;
+```
+
+### 3. Enable SSL
+
+```bash
+# In postgresql.conf
+ssl = on
+ssl_cert_file = '/path/to/server.crt'
+ssl_key_file = '/path/to/server.key'
+ssl_ca_file = '/path/to/ca.crt'
+```
+
+### 4. Connection Pooling
+
+For high-traffic environments, use connection pooling with PgBouncer:
+
+```
+postgres://terraform:password@pgbouncer:6432/terraform_backend
+```
+
+## Advantages
+
+1. **ACID Compliance** - Strong consistency guarantees
+2. **Native Locking** - Advisory locks prevent concurrent modifications
+3. **Familiar Technology** - PostgreSQL is widely known and used
+4. **Integrated** - Works with existing PostgreSQL infrastructure
+5. **Transactional** - State operations are atomic
+6. **Auditing** - Database logs track all changes
+
+## Limitations
+
+1. **Database Dependency** - Requires PostgreSQL server
+2. **Size Limits** - Large states may impact database performance
+3. **No Versioning** - No built-in state history (use database backups)
+4. **Network Latency** - Remote database connections may be slower
+
+## Monitoring and Maintenance
+
+### Check State Size
+
+```sql
+SELECT 
+    name,
+    pg_size_pretty(length(data)) AS state_size
+FROM terraform_remote_state.states
+ORDER BY length(data) DESC;
+```
+
+### View All Workspaces
+
+```sql
+SELECT name, created_at 
+FROM terraform_remote_state.states 
+ORDER BY name;
+```
+
+### Check for Locks
+
+```sql
+SELECT * FROM pg_locks WHERE locktype = 'advisory';
+```
+
+## Best Practices
+
+1. **Use SSL** for all connections
+2. **Dedicated database** for Terraform state
+3. **Regular backups** of the state database
+4. **Connection pooling** for multiple users
+5. **Monitor database size** and performance
+6. **Separate schemas** for different teams
+7. **Rotate credentials** regularly
+8. **Enable query logging** for audit trails

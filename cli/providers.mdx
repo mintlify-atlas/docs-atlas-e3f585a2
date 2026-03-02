@@ -1,0 +1,119 @@
+---
+title: terraform providers
+description: The terraform providers command shows the providers required for the current configuration.
+---
+
+# Command: providers
+
+The `terraform providers` command shows information about the provider requirements of the configuration in the current working directory.
+
+## Usage
+
+```bash
+terraform providers [options]
+```
+
+## Description
+
+This command prints out a tree of modules in the referenced configuration, annotated with their provider requirements.
+
+It provides an overview of all provider requirements across all referenced modules, as an aid to understanding:
+
+- Why particular provider plugins are needed
+- Which particular versions are selected
+- How providers are used across modules and tests
+
+The command displays two sections:
+
+1. **Providers required by configuration**: A hierarchical tree showing all providers needed by the root module, child modules, and test files
+2. **Providers required by state**: A list of providers that are used in the current state (if any)
+
+## Options
+
+- `-test-directory=path` - Set the Terraform test directory. Defaults to `"tests"`.
+
+## Output Format
+
+The output is organized as a tree structure:
+
+```
+Providers required by configuration:
+.
+├── provider[registry.terraform.io/hashicorp/aws] >= 4.0.0
+├── module.network
+│   └── provider[registry.terraform.io/hashicorp/aws]
+└── test.example
+    ├── provider[registry.terraform.io/hashicorp/random]
+    └── run.setup
+        └── provider[registry.terraform.io/hashicorp/null]
+
+Providers required by state:
+
+    provider[registry.terraform.io/hashicorp/aws]
+```
+
+### Tree Structure Elements
+
+- **Root level**: Providers required directly by the root module configuration
+- **module.\<name\>**: Providers required by child modules
+- **test.\<name\>**: Providers required by test files (`.tftest.hcl` files)
+- **run.\<name\>**: Providers required by specific test runs within test files
+
+Version constraints are shown next to each provider when specified in the configuration.
+
+## Implementation Details
+
+The command:
+
+1. Loads the configuration from the current directory
+2. Validates that the directory contains Terraform configuration files
+3. Loads the backend and retrieves the current state
+4. Analyzes provider requirements from both configuration and state
+5. Builds a tree representation of provider dependencies
+
+This is a read-only command and does not modify any files or state.
+
+## Examples
+
+### Basic Usage
+
+Show all providers required by the current configuration:
+
+```bash
+terraform providers
+```
+
+### With Custom Test Directory
+
+Specify a different directory for test files:
+
+```bash
+terraform providers -test-directory=integration-tests
+```
+
+### Change Working Directory
+
+Analyze providers for a configuration in a different directory:
+
+```bash
+terraform -chdir=./environments/production providers
+```
+
+## When to Use
+
+Use `terraform providers` to:
+
+- Audit which providers are used in your configuration
+- Understand the provider dependency tree across modules
+- Verify provider version constraints
+- Identify providers that are in state but no longer in configuration
+- Debug provider-related issues
+- Document provider requirements for a project
+
+## Related Commands
+
+- [`terraform providers lock`](/cli/providers-lock) - Write out dependency locks for providers
+- [`terraform providers mirror`](/cli/providers-mirror) - Save local copies of provider plugins
+- [`terraform providers schema`](/cli/providers-schema) - Show schemas for providers
+- [`terraform init`](/cli/init) - Initialize providers and download plugins
+- [`terraform version`](/cli/version) - Show Terraform and provider versions

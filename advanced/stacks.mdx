@@ -1,0 +1,209 @@
+---
+title: Terraform Stacks
+description: Learn about Terraform Stacks, an orchestration layer for managing multiple Terraform modules and infrastructure components at scale.
+---
+
+# Terraform Stacks
+
+Terraform Stacks is an orchestration layer built on top of Terraform modules that enables you to manage complex infrastructure deployments across multiple environments, regions, and teams.
+
+## Overview
+
+Stacks provide a higher-level abstraction for organizing and managing infrastructure by orchestrating zero or more trees of Terraform modules. This architecture allows you to:
+
+- Orchestrate multiple module configurations as a single unit
+- Manage dependencies between components automatically
+- Deploy infrastructure across multiple instances with `for_each`
+- Maintain consistent configurations across environments
+
+## Architecture
+
+The Stacks system consists of several key components:
+
+### Core Components
+
+**Stack Addresses (`stackaddrs`)**
+
+A stacks-specific addressing system for referring to objects within the stacks language and runtime. This builds on Terraform's standard `addrs` package since the stacks runtime wraps the modules runtime.
+
+**Stack Configuration (`stackconfig`)**
+
+Implements loading, parsing, and static decoding for the stacks language, similar to how the `configs` package works for Terraform's module language.
+
+Location: `internal/stacks/stackconfig/`
+
+**Stack Plan and State (`stackplan` and `stackstate`)**
+
+Provide models and marshalling/unmarshalling logic for the Stacks variants of Terraform's plan and state concepts.
+
+```go
+// Example from internal/stacks/stackplan/plan.go
+type Plan struct {
+    // Applyable is true for a plan that was successfully created
+    Applyable bool
+    
+    // Complete is true for a plan that doesn't need follow-up plans
+    Complete bool
+    
+    // Mode is the original mode of the plan
+    Mode plans.Mode
+    
+    // Root is the root StackInstance for the configuration
+    Root *StackInstance
+    
+    // RootInputValues are the input variable values provided
+    RootInputValues map[stackaddrs.InputVariable]cty.Value
+    
+    // PlanTimestamp is the time at which the plan was created
+    PlanTimestamp time.Time
+}
+```
+
+**Stack Runtime (`stackruntime`)**
+
+Handles the runtime behavior of stacks, including:
+- Creating plans based on comparison between desired and actual state
+- Applying those plans
+- All dynamic behavior of the stacks language
+
+Location: `internal/stacks/stackruntime/`
+
+## Runtime Architecture
+
+The stacks runtime uses an implicit data flow graph constructed dynamically during evaluation, which differs from the traditional Terraform modules runtime.
+
+### Config vs. Dynamic Objects
+
+Stacks use paired types to represent static configuration and dynamic instances:
+
+- **Config objects**: Represent static configuration (e.g., `ComponentConfig`)
+- **Dynamic objects**: Represent runtime instances (e.g., `Component`, `ComponentInstance`)
+
+This separation enables:
+- Early validation during the validation phase
+- Avoiding redundant error reporting across multiple instances
+- Clear distinction between static checks and dynamic operations
+
+### Calls vs. Instances
+
+For objects supporting `for_each`, there's a three-tier hierarchy:
+
+1. **Config** (`ComponentConfig`): Validates the component declaration
+2. **Call** (`Component`): Evaluates `for_each` and produces instance mappings
+3. **Instance** (`ComponentInstance`): Represents individual instances with their own evaluation context
+
+## Evaluation Phases
+
+Stacks support multiple evaluation phases:
+
+### ValidatePhase
+
+Performs static validation without dynamic evaluation. Created via `NewForValidating()`.
+
+### PlanPhase
+
+Creates plans based on comparison between desired and actual state. Created via `NewForPlanning()` with prior state and planning options.
+
+### ApplyPhase
+
+Applies previously created plans. Created via `NewForApplying()` bound to a specific stack plan.
+
+### InspectPhase
+
+Provides read-only access to state for utilities and testing. Created via `NewForInspecting()`.
+
+## Expression Evaluation
+
+Stacks use a sophisticated expression evaluation system:
+
+```plaintext
+1. Analyze expressions for HCL symbol references
+2. Parse references using stackaddrs.ParseReference
+3. Resolve references through EvaluationScope
+4. Call ExprReferenceValue on Referenceable objects
+5. Assemble values into hcl.EvalContext and evaluate
+```
+
+**EvaluationScope**
+
+Implemented by objects that can have expressions evaluated inside them (e.g., `Stack`, `Component`, `StackCall`).
+
+**Referenceable**
+
+Implemented by objects that can be referred to in expressions (e.g., `InputVariable`, `Component`).
+
+## Apply-Phase Scheduling
+
+During apply, Stacks use explicit scheduling to ensure correct operation ordering:
+
+- Uses `ChangeExec` function for managing apply operations
+- Builds dependency graph between components during planning
+- Ensures operations execute in correct order relative to dependencies
+- Prevents issues like destroying dependent resources before their dependencies
+
+Location: `internal/stacks/stackruntime/internal/stackeval/`
+
+## Working with Stacks
+
+### Component Management
+
+Components are the primary building blocks in Stacks:
+
+```hcl
+# Example component with for_each
+component "web_server" {
+  for_each = var.regions
+  
+  source = "./modules/web-server"
+  
+  inputs = {
+    region = each.value
+    name   = "web-${each.key}"
+  }
+}
+```
+
+### Stack Calls
+
+Nest stacks within stacks for hierarchical organization:
+
+```hcl
+stack "environment" {
+  for_each = var.environments
+  
+  source = "./stacks/environment"
+  
+  inputs = {
+    env_name = each.key
+  }
+}
+```
+
+## Protocol Buffers Schema
+
+Stacks use Protocol Buffers for preserving plan and state data between runs:
+
+- Package: `tfstackdata1`
+- Format: Internal implementation detail
+- Public interface: Terraform Core RPC API (implemented in `rpcapi`)
+
+## Best Practices
+
+1. **Use Config objects for validation**: Perform checks at the configuration level when possible
+2. **Leverage evaluation phases**: Use the appropriate phase for each operation
+3. **Respect singleton patterns**: Each object should be instantiated once per evaluation phase
+4. **Handle diagnostics properly**: Use `Check*` methods for propagating diagnostics
+5. **Consider dependencies**: Ensure components declare their dependencies correctly
+
+## Related Resources
+
+- [Testing Framework](/advanced/testing) - Learn how to test your Stacks configurations
+- [Cloud Integration](/advanced/cloud-integration) - Deploy Stacks with HCP Terraform
+- [Debugging](/advanced/debugging) - Debug Stacks runtime issues
+
+## Implementation Details
+
+For maintainers and contributors, detailed internal documentation is available in:
+
+- `internal/stacks/README.md` - High-level overview
+- `internal/stacks/stackruntime/internal/stackeval/README.md` - Runtime architecture details

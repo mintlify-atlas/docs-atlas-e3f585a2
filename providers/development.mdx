@@ -1,0 +1,573 @@
+---
+title: "Provider Development"
+description: "Learn how to develop custom Terraform providers using the plugin protocol."
+---
+
+## Provider Development Overview
+
+Terraform providers are standalone plugin binaries that communicate with Terraform Core using the gRPC protocol. This architecture enables providers to be developed independently in any language that supports gRPC.
+
+## Plugin Protocol
+
+Terraform uses HashiCorp's `go-plugin` library for the plugin system, implementing communication over gRPC.
+
+### Protocol Versions
+
+Terraform supports multiple protocol versions for backward compatibility (`internal/plugin/serve.go:12`):
+
+```go
+const (
+    ProviderPluginName    = "provider"
+    ProvisionerPluginName = "provisioner"
+    DefaultProtocolVersion = 4  // Legacy compatibility
+)
+```
+
+**Current Protocol**: Version 5 (recommended for new providers)
+
+### Handshake Configuration
+
+The plugin handshake ensures Terraform Core and providers are compatible (`internal/plugin/serve.go:26`):
+
+```go
+var Handshake = plugin.HandshakeConfig{
+    ProtocolVersion:  DefaultProtocolVersion,
+    MagicCookieKey:   "TF_PLUGIN_MAGIC_COOKIE",
+    MagicCookieValue: "d602bf8f470bc67ca7faa0386276bbdd4330efaf76d1a219cb4d6991ca9872b2",
+}
+```
+
+**Purpose**:
+- Verify provider compatibility
+- Prevent accidental execution of non-provider binaries
+- Negotiate protocol version
+
+## Implementing a Provider
+
+### Provider Interface
+
+Implement the `providers.Interface` (`internal/providers/provider.go:17`) to create a provider:
+
+```go
+type Interface interface {
+    // Schema methods
+    GetProviderSchema() GetProviderSchemaResponse
+    GetResourceIdentitySchemas() GetResourceIdentitySchemasResponse
+    
+    // Configuration methods
+    ValidateProviderConfig(ValidateProviderConfigRequest) ValidateProviderConfigResponse
+    ConfigureProvider(ConfigureProviderRequest) ConfigureProviderResponse
+    
+    // Resource methods
+    ValidateResourceConfig(ValidateResourceConfigRequest) ValidateResourceConfigResponse
+    ReadResource(ReadResourceRequest) ReadResourceResponse
+    PlanResourceChange(PlanResourceChangeRequest) PlanResourceChangeResponse
+    ApplyResourceChange(ApplyResourceChangeRequest) ApplyResourceChangeResponse
+    ImportResourceState(ImportResourceStateRequest) ImportResourceStateResponse
+    UpgradeResourceState(UpgradeResourceStateRequest) UpgradeResourceStateResponse
+    
+    // Data source methods
+    ValidateDataResourceConfig(ValidateDataResourceConfigRequest) ValidateDataResourceConfigResponse
+    ReadDataSource(ReadDataSourceRequest) ReadDataSourceResponse
+    
+    // Lifecycle methods
+    Stop() error
+    Close() error
+}
+```
+
+### Serving the Provider
+
+Use the `plugin.Serve` function to expose your provider (`internal/plugin/serve.go:52`):
+
+```go
+func main() {
+    plugin.Serve(&plugin.ServeOpts{
+        GRPCProviderFunc: func() proto.ProviderServer {
+            return &MyProvider{}
+        },
+    })
+}
+```
+
+### Provider Factory
+
+For built-in or testing providers, use the `Factory` pattern (`internal/providers/factory.go:6`):
+
+```go
+type Factory func() (Interface, error)
+
+// Create a fixed factory for testing
+func FactoryFixed(p Interface) Factory {
+    return func() (Interface, error) {
+        return p, nil
+    }
+}
+```
+
+## Schema Definition
+
+### Provider Schema
+
+Define the schema for your provider configuration:
+
+```go
+func (p *MyProvider) GetProviderSchema() providers.GetProviderSchemaResponse {
+    return providers.GetProviderSchemaResponse{
+        Provider: providers.Schema{
+            Version: 1,
+            Body: &configschema.Block{
+                Attributes: map[string]*configschema.Attribute{
+                    "api_token": {
+                        Type:      cty.String,
+                        Required:  true,
+                        Sensitive: true,
+                    },
+                    "endpoint": {
+                        Type:     cty.String,
+                        Optional: true,
+                    },
+                },
+            },
+        },
+        ResourceTypes: map[string]providers.Schema{
+            "mycloud_instance": instanceSchema,
+            "mycloud_database": databaseSchema,
+        },
+        DataSources: map[string]providers.Schema{
+            "mycloud_image": imageDataSourceSchema,
+        },
+    }
+}
+```
+
+### Resource Schema
+
+Define schemas for each resource type:
+
+```go
+var instanceSchema = providers.Schema{
+    Version: 1,
+    Body: &configschema.Block{
+        Attributes: map[string]*configschema.Attribute{
+            "id": {
+                Type:     cty.String,
+                Computed: true,
+            },
+            "name": {
+                Type:     cty.String,
+                Required: true,
+            },
+            "size": {
+                Type:     cty.String,
+                Required: true,
+            },
+            "tags": {
+                Type:     cty.Map(cty.String),
+                Optional: true,
+            },
+        },
+        BlockTypes: map[string]*configschema.NestedBlock{
+            "network": {
+                Nesting: configschema.NestingList,
+                Block: configschema.Block{
+                    Attributes: map[string]*configschema.Attribute{
+                        "subnet_id": {
+                            Type:     cty.String,
+                            Required: true,
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+```
+
+## Resource Lifecycle Implementation
+
+### Read Operation
+
+Refresh the current state of a resource (`internal/providers/provider.go:455`):
+
+```go
+func (p *MyProvider) ReadResource(req providers.ReadResourceRequest) providers.ReadResourceResponse {
+    // Extract resource ID from prior state
+    id := req.PriorState.GetAttr("id").AsString()
+    
+    // Fetch current state from API
+    current, err := p.client.GetInstance(id)
+    if err != nil {
+        if isNotFound(err) {
+            // Resource no longer exists
+            return providers.ReadResourceResponse{
+                NewState: cty.NullVal(req.PriorState.Type()),
+            }
+        }
+        return providers.ReadResourceResponse{
+            Diagnostics: diagnosticsFromError(err),
+        }
+    }
+    
+    // Convert API response to state value
+    newState := instanceToState(current)
+    
+    return providers.ReadResourceResponse{
+        NewState: newState,
+    }
+}
+```
+
+### Plan Operation
+
+Compute planned changes for a resource (`internal/providers/provider.go:536`):
+
+```go
+func (p *MyProvider) PlanResourceChange(req providers.PlanResourceChangeRequest) providers.PlanResourceChangeResponse {
+    var requiresReplace []cty.Path
+    
+    // Check if resource needs replacement
+    priorName := req.PriorState.GetAttr("name")
+    proposedName := req.ProposedNewState.GetAttr("name")
+    
+    if !priorName.IsNull() && !priorName.RawEquals(proposedName) {
+        // Name change requires replacement
+        requiresReplace = append(requiresReplace, cty.GetAttrPath("name"))
+    }
+    
+    // Compute planned state (may include unknown values)
+    plannedState := req.ProposedNewState
+    
+    return providers.PlanResourceChangeResponse{
+        PlannedState:    plannedState,
+        RequiresReplace: requiresReplace,
+    }
+}
+```
+
+### Apply Operation
+
+Execute planned changes and return final state (`internal/providers/provider.go:604`):
+
+```go
+func (p *MyProvider) ApplyResourceChange(req providers.ApplyResourceChangeRequest) providers.ApplyResourceChangeResponse {
+    // Handle deletion
+    if req.PlannedState.IsNull() {
+        id := req.PriorState.GetAttr("id").AsString()
+        err := p.client.DeleteInstance(id)
+        if err != nil && !isNotFound(err) {
+            return providers.ApplyResourceChangeResponse{
+                Diagnostics: diagnosticsFromError(err),
+            }
+        }
+        return providers.ApplyResourceChangeResponse{
+            NewState: cty.NullVal(req.PriorState.Type()),
+        }
+    }
+    
+    // Handle creation
+    if req.PriorState.IsNull() {
+        instance, err := p.client.CreateInstance({
+            Name: req.PlannedState.GetAttr("name").AsString(),
+            Size: req.PlannedState.GetAttr("size").AsString(),
+        })
+        if err != nil {
+            return providers.ApplyResourceChangeResponse{
+                Diagnostics: diagnosticsFromError(err),
+            }
+        }
+        return providers.ApplyResourceChangeResponse{
+            NewState: instanceToState(instance),
+        }
+    }
+    
+    // Handle update
+    id := req.PriorState.GetAttr("id").AsString()
+    instance, err := p.client.UpdateInstance(id, {
+        Size: req.PlannedState.GetAttr("size").AsString(),
+    })
+    if err != nil {
+        return providers.ApplyResourceChangeResponse{
+            Diagnostics: diagnosticsFromError(err),
+        }
+    }
+    
+    return providers.ApplyResourceChangeResponse{
+        NewState: instanceToState(instance),
+    }
+}
+```
+
+### Import Operation
+
+Import existing infrastructure (`internal/providers/provider.go:658`):
+
+```go
+func (p *MyProvider) ImportResourceState(req providers.ImportResourceStateRequest) providers.ImportResourceStateResponse {
+    // Fetch resource by ID
+    instance, err := p.client.GetInstance(req.ID)
+    if err != nil {
+        return providers.ImportResourceStateResponse{
+            Diagnostics: diagnosticsFromError(err),
+        }
+    }
+    
+    return providers.ImportResourceStateResponse{
+        ImportedResources: []providers.ImportedResource{
+            {
+                TypeName: req.TypeName,
+                State:    instanceToState(instance),
+            },
+        },
+    }
+}
+```
+
+## gRPC Communication
+
+The `GRPCProvider` handles translation between Terraform and the provider (`internal/plugin/grpc_provider.go:49`):
+
+### Client-Side Translation
+
+```go
+type GRPCProvider struct {
+    PluginClient *plugin.Client
+    TestServer   *grpc.Server
+    Addr         addrs.Provider
+    client       proto.ProviderClient
+    ctx          context.Context
+    schema       providers.GetProviderSchemaResponse
+}
+```
+
+### Schema Caching
+
+Providers can declare `GetProviderSchemaOptional` to enable schema caching (`internal/plugin/grpc_provider.go:86`):
+
+```go
+if !p.Addr.IsZero() {
+    if resp, ok := providers.SchemaCache.Get(p.Addr); ok {
+        if resp.ServerCapabilities.GetProviderSchemaOptional {
+            return resp  // Use cached schema
+        }
+    }
+}
+```
+
+### Message Size Limits
+
+Large schemas require increased message size limits (`internal/plugin/grpc_provider.go:115`):
+
+```go
+const maxRecvSize = 64 << 20  // 64MB
+protoResp, err := p.client.GetSchema(
+    p.ctx,
+    new(proto.GetProviderSchema_Request),
+    grpc.MaxRecvMsgSizeCallOption{MaxRecvMsgSize: maxRecvSize},
+)
+```
+
+## Error Handling and Diagnostics
+
+### Diagnostic Types
+
+Providers return diagnostics for errors and warnings:
+
+```go
+type Diagnostics []Diagnostic
+
+type Diagnostic struct {
+    Severity Severity       // Error or Warning
+    Summary  string         // Short description
+    Detail   string         // Detailed explanation
+    Subject  *SourceRange   // Location in configuration
+}
+```
+
+### Creating Diagnostics
+
+```go
+func diagnosticsFromError(err error) tfdiags.Diagnostics {
+    return tfdiags.Diagnostics{
+        tfdiags.Sourceless(
+            tfdiags.Error,
+            "API Error",
+            fmt.Sprintf("Failed to communicate with API: %s", err),
+        ),
+    }
+}
+```
+
+## State Upgrade
+
+Handle schema version changes with state upgrade (`internal/providers/provider.go:392`):
+
+```go
+func (p *MyProvider) UpgradeResourceState(req providers.UpgradeResourceStateRequest) providers.UpgradeResourceStateResponse {
+    // Unmarshal old state
+    var oldState map[string]interface{}
+    json.Unmarshal(req.RawStateJSON, &oldState)
+    
+    // Migrate from version 0 to version 1
+    if req.Version == 0 {
+        // Add new required field with default value
+        oldState["region"] = "us-east-1"
+    }
+    
+    // Convert to current schema
+    newState := mapToState(oldState)
+    
+    return providers.UpgradeResourceStateResponse{
+        UpgradedState: newState,
+    }
+}
+```
+
+## Testing Providers
+
+### Unit Testing
+
+Test provider logic in isolation:
+
+```go
+func TestReadResource(t *testing.T) {
+    provider := &MyProvider{
+        client: &mockClient{
+            instances: map[string]*Instance{
+                "i-12345": {ID: "i-12345", Name: "test"},
+            },
+        },
+    }
+    
+    req := providers.ReadResourceRequest{
+        TypeName: "mycloud_instance",
+        PriorState: cty.ObjectVal(map[string]cty.Value{
+            "id": cty.StringVal("i-12345"),
+        }),
+    }
+    
+    resp := provider.ReadResource(req)
+    
+    if resp.Diagnostics.HasErrors() {
+        t.Fatalf("unexpected errors: %s", resp.Diagnostics)
+    }
+    
+    if resp.NewState.GetAttr("name").AsString() != "test" {
+        t.Error("expected name to be 'test'")
+    }
+}
+```
+
+### Integration Testing
+
+Use Terraform's test framework for end-to-end testing with actual Terraform operations.
+
+## Best Practices
+
+### Use the Terraform Plugin SDK
+
+While you can implement the provider interface directly, use the official Terraform Plugin SDK for production providers. It provides:
+- Schema helpers
+- CRUD operation scaffolding
+- Testing utilities
+- Automatic protocol handling
+
+### Implement Graceful Degradation
+
+Handle API errors gracefully:
+
+```go
+if isRateLimitError(err) {
+    // Return warning instead of error
+    return ReadResourceResponse{
+        NewState: req.PriorState,  // Keep existing state
+        Diagnostics: tfdiags.Diagnostics{
+            tfdiags.Warning(
+                "Rate Limited",
+                "API rate limit reached. Using cached state.",
+            ),
+        },
+    }
+}
+```
+
+### Validate Early
+
+Implement `ValidateResourceConfig` to catch errors before apply:
+
+```go
+func (p *MyProvider) ValidateResourceConfig(req providers.ValidateResourceConfigRequest) providers.ValidateResourceConfigResponse {
+    size := req.Config.GetAttr("size").AsString()
+    if !isValidSize(size) {
+        return providers.ValidateResourceConfigResponse{
+            Diagnostics: tfdiags.Diagnostics{
+                tfdiags.AttributeValue(
+                    tfdiags.Error,
+                    "Invalid size",
+                    fmt.Sprintf("Size %q is not valid. Must be one of: small, medium, large.", size),
+                    cty.GetAttrPath("size"),
+                ),
+            },
+        }
+    }
+    return providers.ValidateResourceConfigResponse{}
+}
+```
+
+### Use Private Metadata
+
+Store provider-specific data in the `Private` field:
+
+```go
+type privateMetadata struct {
+    InternalID string
+    ETag       string
+}
+
+func (p *MyProvider) ReadResource(req providers.ReadResourceRequest) providers.ReadResourceResponse {
+    var meta privateMetadata
+    json.Unmarshal(req.Private, &meta)
+    
+    // Use ETag for conditional requests
+    instance, err := p.client.GetInstanceIfModified(id, meta.ETag)
+    
+    newMeta, _ := json.Marshal(privateMetadata{
+        InternalID: instance.InternalID,
+        ETag:       instance.ETag,
+    })
+    
+    return providers.ReadResourceResponse{
+        NewState: instanceToState(instance),
+        Private:  newMeta,
+    }
+}
+```
+
+### Handle Partial Updates
+
+Return partial state on errors during apply:
+
+```go
+func (p *MyProvider) ApplyResourceChange(req providers.ApplyResourceChangeRequest) providers.ApplyResourceChangeResponse {
+    id := req.PriorState.GetAttr("id").AsString()
+    
+    // Update instance size
+    if err := p.client.UpdateSize(id, newSize); err != nil {
+        // Return current state even on error
+        current, _ := p.client.GetInstance(id)
+        return providers.ApplyResourceChangeResponse{
+            NewState:    instanceToState(current),
+            Diagnostics: diagnosticsFromError(err),
+        }
+    }
+    
+    // Continue with other updates...
+}
+```
+
+## Next Steps
+
+- [Terraform Plugin SDK Documentation](https://developer.hashicorp.com/terraform/plugin)
+- [Provider Design Principles](https://developer.hashicorp.com/terraform/plugin/best-practices)
+- [Providers Overview](/providers/overview) - Understand provider architecture
+- [Provider Configuration](/providers/configuration) - Learn about provider configuration

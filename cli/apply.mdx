@@ -1,0 +1,236 @@
+---
+title: terraform apply
+description: Create or update infrastructure
+---
+
+## Synopsis
+
+Create or update infrastructure
+
+## Description
+
+The `terraform apply` command creates or updates infrastructure according to Terraform configuration files in the current directory.
+
+By default, Terraform will generate a new plan and present it for your approval before taking any action. You can optionally provide a plan file created by a previous call to `terraform plan`, in which case Terraform will take the actions described in that plan without any confirmation prompt.
+
+## Usage
+
+```bash
+terraform apply [options] [plan_file]
+```
+
+## Arguments
+
+<ParamField path="plan_file" type="string">
+  Optional path to a saved plan file created by `terraform plan -out=FILE`. If provided, Terraform will apply exactly the changes described in that plan without generating a new plan or prompting for approval.
+</ParamField>
+
+## Options
+
+### Approval Options
+
+<ParamField path="-auto-approve" type="boolean" default="false">
+  Skip interactive approval of plan before applying.
+</ParamField>
+
+<ParamField path="-input" type="boolean" default="true">
+  Ask for input for variables if not directly set.
+</ParamField>
+
+### Plan Mode Options
+
+If you don't provide a saved plan file, this command also accepts all of the plan-customization options from `terraform plan`:
+
+<ParamField path="-destroy" type="boolean" default="false">
+  Destroy Terraform-managed infrastructure. The command `terraform destroy` is a convenience alias for this option.
+</ParamField>
+
+<ParamField path="-refresh-only" type="boolean" default="false">
+  Select the "refresh only" mode, which only updates the state to match remote objects without proposing any changes.
+</ParamField>
+
+<ParamField path="-refresh" type="boolean" default="true">
+  Update the state prior to checking for differences. Set to false to skip refreshing.
+</ParamField>
+
+<ParamField path="-replace" type="string">
+  Force replacement of a particular resource instance using its resource address. Terraform will plan to replace this resource instance instead of updating it. Can be used multiple times.
+</ParamField>
+
+<ParamField path="-target" type="string">
+  Limit the apply operation to only the given module, resource, or resource instance and all of its dependencies. Can be used multiple times. This is for exceptional use only.
+</ParamField>
+
+### Variable Options
+
+<ParamField path="-var" type="string">
+  Set a value for one of the input variables in the root module of the configuration. Use this option more than once to set more than one variable. Format: `-var 'name=value'`
+</ParamField>
+
+<ParamField path="-var-file" type="string">
+  Load variable values from the given file, in addition to the default files `terraform.tfvars` and `*.auto.tfvars`. Use this option more than once to include more than one variables file.
+</ParamField>
+
+### State Management
+
+<ParamField path="-lock" type="boolean" default="true">
+  Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+</ParamField>
+
+<ParamField path="-lock-timeout" type="duration" default="0s">
+  Duration to retry a state lock. For example: "10s" for 10 seconds.
+</ParamField>
+
+<ParamField path="-state" type="string">
+  Path to read and save state (unless state-out is specified). Defaults to "terraform.tfstate". Legacy option for the local backend only.
+</ParamField>
+
+<ParamField path="-state-out" type="string">
+  Path to write state to that is different than "-state". This can be used to preserve the old state. Legacy option for the local backend only.
+</ParamField>
+
+<ParamField path="-backup" type="string">
+  Path to backup the existing state file before modifying. Defaults to the "-state-out" path with ".backup" extension. Set to "-" to disable backup.
+</ParamField>
+
+### Performance Options
+
+<ParamField path="-parallelism" type="number" default="10">
+  Limit the number of parallel resource operations.
+</ParamField>
+
+### Output Options
+
+<ParamField path="-compact-warnings" type="boolean" default="false">
+  If Terraform produces any warnings that are not accompanied by errors, show them in a more compact form that includes only the summary messages.
+</ParamField>
+
+<ParamField path="-json" type="boolean" default="false">
+  Produce output in a machine-readable JSON format. When using this flag with a plan file argument, you must also specify `-auto-approve`.
+</ParamField>
+
+<ParamField path="-no-color" type="boolean" default="false">
+  If specified, output won't contain any color.
+</ParamField>
+
+## Examples
+
+### Basic Apply
+
+Apply changes with interactive approval:
+
+```bash
+$ terraform apply
+
+Terraform used the selected providers to generate the following execution plan.
+Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # aws_instance.example will be created
+  + resource "aws_instance" "example" {
+      + ami                          = "ami-0c55b159cbfafe1f0"
+      + instance_type                = "t2.micro"
+      + id                           = (known after apply)
+      ...
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+
+aws_instance.example: Creating...
+aws_instance.example: Creation complete after 45s [id=i-1234567890abcdef0]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+```
+
+### Auto-Approve
+
+Apply changes without interactive approval:
+
+```bash
+$ terraform apply -auto-approve
+
+aws_instance.example: Creating...
+aws_instance.example: Creation complete after 45s [id=i-1234567890abcdef0]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+```
+
+### Apply Saved Plan
+
+Apply a saved plan file:
+
+```bash
+$ terraform apply "tfplan"
+
+aws_instance.example: Creating...
+aws_instance.example: Creation complete after 45s [id=i-1234567890abcdef0]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+```
+
+### Apply with Variables
+
+Apply with variable values:
+
+```bash
+$ terraform apply -var="instance_type=t3.small" -var-file="prod.tfvars"
+```
+
+### Target Specific Resources
+
+Apply changes to specific resources only:
+
+```bash
+$ terraform apply -target=aws_instance.example -auto-approve
+
+aws_instance.example: Creating...
+aws_instance.example: Creation complete after 45s
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+```
+
+### Force Replacement
+
+Force replacement of a resource:
+
+```bash
+$ terraform apply -replace=aws_instance.example -auto-approve
+
+aws_instance.example: Destroying... [id=i-1234567890abcdef0]
+aws_instance.example: Destruction complete after 30s
+aws_instance.example: Creating...
+aws_instance.example: Creation complete after 45s [id=i-0987654321fedcba0]
+
+Apply complete! Resources: 1 added, 0 changed, 1 destroyed.
+```
+
+### Apply with Outputs
+
+Example showing outputs after apply:
+
+```bash
+$ terraform apply -auto-approve
+
+aws_instance.example: Creating...
+aws_instance.example: Creation complete after 45s [id=i-1234567890abcdef0]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+instance_id = "i-1234567890abcdef0"
+instance_public_ip = "54.123.45.67"
+```
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error occurred

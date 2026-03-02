@@ -1,0 +1,296 @@
+---
+title: GCS Backend
+description: Store Terraform state in Google Cloud Storage.
+---
+
+# GCS Backend
+
+The **GCS** (Google Cloud Storage) backend stores state as an object in a Google Cloud Storage bucket.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/gcs/backend.go`
+
+## Use Cases
+
+- Managing Google Cloud Platform infrastructure
+- Team collaboration on GCP projects
+- Integration with Google Cloud Build
+- Multi-cloud environments with GCP component
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket = "tf-state-prod"
+    prefix = "terraform/state"
+  }
+}
+```
+
+## Required Configuration
+
+### bucket
+- **Type:** String
+- **Required:** Yes
+- **Description:** The name of the GCS bucket
+
+## Optional Configuration
+
+### prefix
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `""`
+- **Description:** GCS prefix inside the bucket where state files will be saved
+
+The prefix is automatically trimmed of leading `/` and will have a trailing `/` added if not present.
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket = "tf-state-prod"
+    prefix = "env/prod"  # Stored as: env/prod/default.tfstate
+  }
+}
+```
+
+## Authentication
+
+The GCS backend supports multiple authentication methods:
+
+### 1. Application Default Credentials
+
+Uses Google Application Default Credentials (ADC):
+
+```bash
+# Authenticate via gcloud
+gcloud auth application-default login
+```
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket = "tf-state-prod"
+  }
+}
+```
+
+### 2. Service Account Key (JSON)
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket      = "tf-state-prod"
+    credentials = "/path/to/service-account-key.json"
+  }
+}
+```
+
+Or provide JSON directly:
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket = "tf-state-prod"
+    credentials = <<-EOT
+      {
+        "type": "service_account",
+        "project_id": "my-project",
+        "private_key_id": "...",
+        "private_key": "...",
+        "client_email": "...",
+        "client_id": "...",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token"
+      }
+    EOT
+  }
+}
+```
+
+**Environment Variables:**
+- `GOOGLE_BACKEND_CREDENTIALS`
+- `GOOGLE_CREDENTIALS`
+
+### 3. Access Token
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket       = "tf-state-prod"
+    access_token = "ya29.a0AfH6SMBx..."
+  }
+}
+```
+
+**Environment Variable:** `GOOGLE_OAUTH_ACCESS_TOKEN`
+
+### 4. Service Account Impersonation
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket                       = "tf-state-prod"
+    impersonate_service_account  = "terraform@my-project.iam.gserviceaccount.com"
+  }
+}
+```
+
+With delegation chain:
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket                       = "tf-state-prod"
+    impersonate_service_account  = "terraform@my-project.iam.gserviceaccount.com"
+    impersonate_service_account_delegates = [
+      "serviceAccount:delegate-1@my-project.iam.gserviceaccount.com",
+      "serviceAccount:delegate-2@my-project.iam.gserviceaccount.com"
+    ]
+  }
+}
+```
+
+**Environment Variables:**
+- `GOOGLE_BACKEND_IMPERSONATE_SERVICE_ACCOUNT`
+- `GOOGLE_IMPERSONATE_SERVICE_ACCOUNT`
+
+## Encryption
+
+### Customer-Supplied Encryption Keys (CSEK)
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket         = "tf-state-prod"
+    encryption_key = "<base64-encoded-32-byte-key>"
+  }
+}
+```
+
+The encryption key must be:
+- 32 bytes long
+- Base64 encoded
+- Can be a file path or the key itself
+
+**Environment Variable:** `GOOGLE_ENCRYPTION_KEY`
+
+### Customer-Managed Encryption Keys (CMEK)
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket             = "tf-state-prod"
+    kms_encryption_key = "projects/my-project/locations/us-central1/keyRings/my-keyring/cryptoKeys/my-key"
+  }
+}
+```
+
+**Format:** `projects/{{project}}/locations/{{location}}/keyRings/{{keyRing}}/cryptoKeys/{{name}}`
+
+**Environment Variable:** `GOOGLE_KMS_ENCRYPTION_KEY`
+
+**Note:** You cannot use both `encryption_key` and `kms_encryption_key` simultaneously.
+
+## Custom Storage Endpoint
+
+For GCS-compatible storage systems:
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket                  = "tf-state-prod"
+    storage_custom_endpoint = "https://storage.example.com"
+  }
+}
+```
+
+**Environment Variables:**
+- `GOOGLE_BACKEND_STORAGE_CUSTOM_ENDPOINT`
+- `GOOGLE_STORAGE_CUSTOM_ENDPOINT`
+
+## Workspaces
+
+The GCS backend supports workspaces. Each workspace stores its state in a separate object:
+
+```
+<prefix>/default.tfstate
+<prefix>/workspace1.tfstate
+<prefix>/workspace2.tfstate
+```
+
+## State Locking
+
+The GCS backend does not provide built-in state locking. For state locking, consider:
+
+1. Using a different backend that supports locking
+2. Implementing external locking mechanisms
+3. Using Terraform Cloud/Enterprise
+
+## Configuration Options Summary
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `bucket` | string | Yes | GCS bucket name |
+| `prefix` | string | No | Path prefix for state files |
+| `credentials` | string | No | Service account key JSON or file path |
+| `access_token` | string | No | OAuth2 access token |
+| `impersonate_service_account` | string | No | Service account email to impersonate |
+| `impersonate_service_account_delegates` | list(string) | No | Delegation chain for impersonation |
+| `encryption_key` | string | No | Base64-encoded customer-supplied encryption key |
+| `kms_encryption_key` | string | No | Cloud KMS crypto key name |
+| `storage_custom_endpoint` | string | No | Custom storage API endpoint |
+
+## Example: Development and Production
+
+### Development
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket      = "tf-state-dev"
+    prefix      = "terraform/state"
+    credentials = "dev-service-account.json"
+  }
+}
+```
+
+### Production with Encryption
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket                      = "tf-state-prod"
+    prefix                      = "terraform/state"
+    impersonate_service_account = "terraform-prod@my-project.iam.gserviceaccount.com"
+    kms_encryption_key          = "projects/my-project/locations/us-central1/keyRings/terraform/cryptoKeys/state"
+  }
+}
+```
+
+## IAM Permissions
+
+The service account or user needs these permissions on the bucket:
+
+- `storage.buckets.get`
+- `storage.objects.create`
+- `storage.objects.delete`
+- `storage.objects.get`
+- `storage.objects.list`
+- `storage.objects.update`
+
+Predefined role: `roles/storage.objectAdmin`
+
+For KMS encryption:
+- `cloudkms.cryptoKeyVersions.useToEncrypt`
+- `cloudkms.cryptoKeyVersions.useToDecrypt`
+
+## Best Practices
+
+1. **Enable versioning** on the GCS bucket for state history
+2. **Use KMS encryption** for production environments
+3. **Service account impersonation** instead of long-lived keys
+4. **Separate buckets** for different environments
+5. **Lifecycle policies** to manage old state versions
+6. **Bucket policies** to restrict access

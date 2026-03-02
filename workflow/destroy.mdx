@@ -1,0 +1,570 @@
+---
+title: Destroy
+description: Safely destroy Terraform-managed infrastructure using terraform destroy.
+---
+
+# Destroy
+
+The `terraform destroy` command destroys all resources managed by your Terraform configuration. It's a convenience alias for `terraform apply -destroy`.
+
+## What It Does
+
+When you run `terraform destroy`, Terraform:
+
+- **Generates a destruction plan** showing all resources to be deleted
+- **Determines the correct destruction order** based on dependencies
+- **Prompts for confirmation** before proceeding
+- **Destroys resources** in the proper sequence
+- **Updates the state file** to reflect removed resources
+- **Removes all managed infrastructure** while preserving the state file
+
+## When to Use It
+
+Run `terraform destroy` when you want to:
+
+- Tear down temporary development or testing environments
+- Remove all infrastructure in a workspace before deletion
+- Clean up resources after a project is complete
+- Start fresh with a clean slate
+- Decommission an entire environment
+
+**Warning:** This is a destructive operation with no undo. Always verify before confirming.
+
+## Basic Usage
+
+<Steps>
+  <Step title="Preview the destruction plan">
+    See what will be destroyed before proceeding:
+    
+    ```bash
+    terraform plan -destroy
+    ```
+    
+    **Example output:**
+    ```
+    Terraform will perform the following actions:
+    
+      # aws_instance.web will be destroyed
+      - resource "aws_instance" "web" {
+          - ami                    = "ami-0c55b159cbfafe1f0" -> null
+          - instance_type          = "t2.micro" -> null
+          - id                     = "i-0123456789abcdef" -> null
+          - public_ip              = "54.123.45.67" -> null
+          # (15 unchanged attributes hidden)
+        }
+    
+      # aws_security_group.web will be destroyed
+      - resource "aws_security_group" "web" {
+          - id                     = "sg-0123456789abcdef" -> null
+          - name                   = "web-sg" -> null
+          # (8 unchanged attributes hidden)
+        }
+    
+    Plan: 0 to add, 0 to change, 2 to destroy.
+    ```
+  </Step>
+
+  <Step title="Run terraform destroy">
+    Destroy all managed resources:
+    
+    ```bash
+    terraform destroy
+    ```
+    
+    Terraform prompts for confirmation:
+    
+    ```
+    Plan: 0 to add, 0 to change, 5 to destroy.
+    
+    Do you really want to destroy all resources?
+      Terraform will destroy all your managed infrastructure, as shown above.
+      There is no undo. Only 'yes' will be accepted to confirm.
+    
+      Enter a value:
+    ```
+  </Step>
+
+  <Step title="Confirm destruction">
+    Type `yes` to proceed:
+    
+    ```
+      Enter a value: yes
+    
+    aws_instance.web: Destroying... [id=i-0123456789abcdef]
+    aws_instance.web: Still destroying... [id=i-0123456789abcdef, 10s elapsed]
+    aws_instance.web: Destruction complete after 15s
+    aws_security_group.web: Destroying... [id=sg-0123456789abcdef]
+    aws_security_group.web: Destruction complete after 2s
+    
+    Destroy complete! Resources: 5 destroyed.
+    ```
+  </Step>
+
+  <Step title="Verify destruction">
+    Confirm all resources were removed:
+    
+    ```bash
+    terraform state list
+    ```
+    
+    **Expected output:** (empty - no resources remain)
+  </Step>
+</Steps>
+
+## Common Flags and Options
+
+### Auto-Approval
+
+**`-auto-approve`**
+
+Skip the confirmation prompt:
+
+```bash
+terraform destroy -auto-approve
+```
+
+**Example output:**
+```
+aws_instance.web: Destroying... [id=i-0123456789abcdef]
+aws_instance.web: Destruction complete after 15s
+
+Destroy complete! Resources: 5 destroyed.
+```
+
+**Warning:** Extremely dangerous. Use only in automated environments with safeguards.
+
+### Targeting Resources
+
+**`-target=RESOURCE`**
+
+Destroy only specific resources:
+
+```bash
+terraform destroy -target=aws_instance.web
+```
+
+**Example output:**
+```
+Plan: 0 to add, 0 to change, 1 to destroy.
+
+Warning: Resource targeting is in effect
+
+Do you really want to destroy all resources?
+  Enter a value: yes
+
+aws_instance.web: Destroying... [id=i-0123456789abcdef]
+aws_instance.web: Destruction complete after 15s
+
+Destroy complete! Resources: 1 destroyed.
+```
+
+**Multiple targets:**
+```bash
+terraform destroy \
+  -target=aws_instance.web \
+  -target=aws_security_group.web
+```
+
+**Warning:** Destroying specific resources may leave orphaned dependencies.
+
+### State Management
+
+**`-backup=PATH`**
+
+Specify a custom backup location for the state file:
+
+```bash
+terraform destroy -backup=terraform.tfstate.backup
+```
+
+**`-lock=false`**
+
+Disable state locking (dangerous):
+
+```bash
+terraform destroy -lock=false
+```
+
+**`-lock-timeout=DURATION`**
+
+Wait for a state lock:
+
+```bash
+terraform destroy -lock-timeout=5m
+```
+
+### Output Control
+
+**`-no-color`**
+
+Disable colored output:
+
+```bash
+terraform destroy -no-color
+```
+
+**`-compact-warnings`**
+
+Show warnings in compact form:
+
+```bash
+terraform destroy -compact-warnings
+```
+
+### Performance
+
+**`-parallelism=N`**
+
+Limit concurrent destroy operations (default: 10):
+
+```bash
+terraform destroy -parallelism=5
+```
+
+**Use case:** Reduce parallelism to avoid API rate limits during destruction.
+
+## Best Practices
+
+### Always Preview First
+
+Review what will be destroyed:
+
+```bash
+# Preview destruction
+terraform plan -destroy
+
+# Review output carefully
+
+# Then destroy
+terraform destroy
+```
+
+### Verify Workspace
+
+Ensure you're in the correct workspace:
+
+```bash
+# Check current workspace
+terraform workspace show
+# Output: production
+
+# DANGER: Are you sure you want to destroy production?
+# Switch to correct workspace if needed
+terraform workspace select dev
+
+terraform destroy
+```
+
+### Backup State Before Destruction
+
+Create a manual backup:
+
+```bash
+# Backup state file
+cp terraform.tfstate terraform.tfstate.pre-destroy.$(date +%Y%m%d)
+
+# Then destroy
+terraform destroy
+```
+
+### Protect Critical Resources
+
+Use lifecycle rules to prevent accidental destruction:
+
+```hcl
+resource "aws_db_instance" "production" {
+  # ... configuration ...
+  
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+```
+
+**Example error when trying to destroy:**
+```
+Error: Instance cannot be destroyed
+
+Resource aws_db_instance.production has lifecycle.prevent_destroy set,
+but the plan calls for this resource to be destroyed.
+```
+
+### Incremental Destruction
+
+Destroy resources in stages using `-target`:
+
+```bash
+# Destroy application tier first
+terraform destroy -target=module.application
+
+# Then destroy database tier
+terraform destroy -target=module.database
+
+# Finally destroy network
+terraform destroy -target=module.network
+```
+
+### Avoid Auto-Approve in Production
+
+Never use `-auto-approve` for production environments:
+
+```bash
+# BAD: Dangerous for production
+terraform destroy -auto-approve
+
+# GOOD: Requires confirmation
+terraform destroy
+```
+
+### Handle Dependencies
+
+Terraform automatically handles dependencies:
+
+```
+# Correct destruction order (Terraform handles this)
+aws_instance.web: Destroying...          # Depends on security group
+aws_instance.web: Destruction complete
+aws_security_group.web: Destroying...    # Destroyed after instance
+aws_security_group.web: Destruction complete
+```
+
+### Data Backup
+
+Backup critical data before destroying:
+
+```bash
+# Backup database
+aws rds create-db-snapshot \
+  --db-instance-identifier mydb \
+  --db-snapshot-identifier mydb-final-snapshot
+
+# Then destroy infrastructure
+terraform destroy
+```
+
+### CI/CD Considerations
+
+In automated environments, add safeguards:
+
+```bash
+# Require manual approval for destruction
+if [ "$ENVIRONMENT" = "production" ]; then
+  echo "Manual approval required for production destroy"
+  exit 1
+fi
+
+terraform destroy -auto-approve
+```
+
+### Workspace Naming
+
+Use clear workspace names to prevent mistakes:
+
+```bash
+# Good workspace names
+terraform workspace select dev-alice
+terraform workspace select staging-sprint-23
+terraform workspace select prod-us-east-1
+
+# Avoid ambiguous names
+terraform workspace select test  # Which test environment?
+```
+
+## Partial Destruction
+
+### Removing Individual Resources
+
+Remove specific resources from state without destroying:
+
+```bash
+# Remove from state without destroying
+terraform state rm aws_instance.web
+
+# Resource still exists in cloud but Terraform no longer manages it
+```
+
+### Destroying Specific Modules
+
+Destroy resources within a module:
+
+```bash
+terraform destroy -target=module.application
+```
+
+## Understanding Destroy Output
+
+### Destruction Progress
+
+```
+aws_instance.web: Destroying... [id=i-0123456789abcdef]
+aws_instance.web: Still destroying... [10s elapsed]
+aws_instance.web: Destruction complete after 15s
+```
+
+### Dependency Order
+
+Terraform destroys in reverse dependency order:
+
+```
+Destroying in order:
+1. aws_instance.web (depends on security group)
+2. aws_security_group.web (depends on VPC)
+3. aws_vpc.main (no dependencies)
+```
+
+### Summary Line
+
+```
+Destroy complete! Resources: 5 destroyed.
+```
+
+This confirms all targeted resources were successfully deleted.
+
+## Troubleshooting
+
+### Cannot Destroy Due to Dependencies
+
+```
+Error: Error deleting security group: DependencyViolation
+
+The security group cannot be deleted because it is in use by
+aws_instance.other
+```
+
+**Solution:**
+```bash
+# Destroy dependent resources first
+terraform destroy -target=aws_instance.other
+
+# Then destroy the security group
+terraform destroy -target=aws_security_group.web
+```
+
+### Resources Already Deleted
+
+```
+Error: Error destroying instance: NotFound
+
+The instance i-0123456789abcdef does not exist.
+```
+
+**Solution:** Remove from state:
+```bash
+terraform state rm aws_instance.web
+```
+
+### Stuck Destroy Operation
+
+If destroy hangs:
+
+```bash
+# Enable debug logging
+TF_LOG=DEBUG terraform destroy
+
+# Check for:
+# - API rate limits
+# - Network connectivity
+# - Provider bugs
+```
+
+### Prevent Destroy Protection
+
+```
+Error: Instance cannot be destroyed
+
+aws_db_instance.production has lifecycle.prevent_destroy set.
+```
+
+**Solution:** Remove the protection (carefully):
+```hcl
+resource "aws_db_instance" "production" {
+  # ...
+  lifecycle {
+    # prevent_destroy = true  # Commented out
+  }
+}
+```
+
+### State Lock During Destroy
+
+```
+Error: Error acquiring the state lock
+```
+
+**Solution:**
+```bash
+# Wait for lock
+terraform destroy -lock-timeout=10m
+
+# Or force unlock (dangerous)
+terraform force-unlock <lock-id>
+```
+
+### Orphaned Resources
+
+If resources are orphaned after partial destroy:
+
+```bash
+# Import orphaned resources back into state
+terraform import aws_instance.web i-0123456789abcdef
+
+# Then destroy properly
+terraform destroy
+```
+
+## Recovery from Failed Destroy
+
+If destroy fails partway through:
+
+```bash
+# Check state to see what was destroyed
+terraform state list
+
+# Fix the error (e.g., permission issues)
+
+# Re-run destroy
+terraform destroy
+```
+
+Terraform will only attempt to destroy resources still in state.
+
+## Alternative to Destroy
+
+### Using Terraform Apply
+
+Destroy can also be done via apply:
+
+```bash
+terraform apply -destroy
+```
+
+This is functionally identical to `terraform destroy`.
+
+### Removing Resources from Configuration
+
+Instead of destroying everything:
+
+1. Remove unwanted resources from `.tf` files
+2. Run `terraform apply`
+3. Terraform will destroy removed resources
+
+```hcl
+# Before: main.tf contains aws_instance.web
+# After: Removed aws_instance.web from main.tf
+```
+
+```bash
+terraform apply
+# Terraform detects aws_instance.web is no longer in config
+# and plans to destroy it
+```
+
+## Next Steps
+
+After destroying infrastructure:
+
+1. Verify resources are deleted in your cloud provider console
+2. Consider deleting the workspace: `terraform workspace delete <name>`
+3. Archive or delete state files if no longer needed
+4. Clean up any manual resources not managed by Terraform
+5. Document the destruction for audit purposes

@@ -1,0 +1,453 @@
+---
+title: "Provider Installation"
+description: "Understand how Terraform installs, caches, and authenticates provider packages."
+---
+
+## Provider Installation Process
+
+Terraform automatically installs required providers during the `terraform init` command. The installation process involves discovering, downloading, verifying, and caching provider packages.
+
+## Provider Sources
+
+Terraform supports multiple provider sources, implemented through the `Source` interface (`internal/getproviders/source.go:14`):
+
+```go
+type Source interface {
+    AvailableVersions(ctx context.Context, provider addrs.Provider) (VersionList, Warnings, error)
+    PackageMeta(ctx context.Context, provider addrs.Provider, version Version, target Platform) (PackageMeta, error)
+    ForDisplay(provider addrs.Provider) string
+}
+```
+
+### Registry Source
+
+The primary provider source is the Terraform Registry. The `RegistrySource` (`internal/getproviders/registry_source.go:18`) communicates with provider registries using the Providers Protocol:
+
+```go
+type RegistrySource struct {
+    services *disco.Disco
+}
+```
+
+**Features**:
+- Queries registry for available provider versions
+- Downloads provider metadata and packages
+- Verifies cryptographic signatures
+- Supports authentication via credentials
+
+**Default Registry**: `registry.terraform.io`
+
+### Filesystem Mirror Source
+
+The `FilesystemMirrorSource` (`internal/getproviders/filesystem_mirror_source.go:14`) serves providers from local directories:
+
+```go
+type FilesystemMirrorSource struct {
+    baseDir     string
+    allPackages map[addrs.Provider]PackageMetaList
+}
+```
+
+**Use Cases**:
+- Air-gapped environments
+- Corporate networks with restricted internet access
+- Faster initialization by avoiding downloads
+- Offline development
+
+### Network Mirror Source
+
+Network mirrors provide provider packages over HTTPS, enabling:
+- Centralized provider distribution
+- Bandwidth optimization
+- Version control and approval workflows
+
+### Dev Overrides
+
+Development overrides allow using locally built providers without installation:
+
+```hcl
+provider_installation {
+  dev_overrides {
+    "example.com/myorg/myprovider" = "/path/to/provider/binary"
+  }
+}
+```
+
+## Installation Configuration
+
+Configure provider installation in the CLI configuration file (`~/.terraformrc` or `terraform.rc`).
+
+### Implicit Configuration
+
+Without explicit configuration, Terraform uses the implicit provider source (`provider_source.go:84`):
+
+```go
+func implicitProviderSource(services *disco.Disco) getproviders.Source {
+    // Search directories in order:
+    // 1. terraform.d/plugins (current directory)
+    // 2. ~/.terraform.d/plugins
+    // 3. Platform-specific directories
+    // 4. Registry source (for providers not found locally)
+}
+```
+
+**Search Path** (in order):
+1. `terraform.d/plugins` - Current working directory
+2. `~/.terraform.d/plugins` - User's Terraform directory
+3. Platform-specific paths:
+   - Linux: `~/.local/share/terraform/plugins`
+   - macOS: `~/Library/Application Support/io.terraform/plugins`
+   - Windows: `%APPDATA%/HashiCorp/Terraform/plugins`
+4. Terraform Registry - Downloads not found locally
+
+### Explicit Configuration
+
+Customize provider installation with explicit configuration (`provider_source.go:41`):
+
+```hcl
+provider_installation {
+  filesystem_mirror {
+    path    = "/opt/terraform/providers"
+    include = ["example.com/*/*"]
+  }
+  
+  network_mirror {
+    url     = "https://mirror.example.com/providers/"
+    include = ["hashicorp/*"]
+  }
+  
+  direct {
+    exclude = ["example.com/*/*"]
+  }
+}
+```
+
+**Method Types**:
+- `filesystem_mirror`: Local directory mirror
+- `network_mirror`: HTTPS network mirror
+- `direct`: Terraform Registry
+
+**Filters**:
+- `include`: Whitelist of providers (glob patterns)
+- `exclude`: Blacklist of providers (glob patterns)
+
+## Version Selection
+
+Terraform selects provider versions based on version constraints:
+
+### Version Constraint Syntax
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"  # >= 5.0.0, < 6.0.0
+    }
+  }
+}
+```
+
+### Selection Algorithm
+
+1. Query all sources for available versions
+2. Filter versions matching the constraint
+3. Sort by semantic version precedence
+4. Select the highest matching version
+5. Verify platform compatibility
+
+## Platform Compatibility
+
+Providers are platform-specific binaries. The `Platform` type (`internal/getproviders/types.go:89`) identifies the target platform:
+
+```go
+type Platform struct {
+    OS   string  // Operating system (linux, darwin, windows)
+    Arch string  // Architecture (amd64, arm64, 386)
+}
+
+// Current platform detection
+var CurrentPlatform = Platform{
+    OS:   runtime.GOOS,
+    Arch: runtime.GOARCH,
+}
+```
+
+**Platform String Format**: `{OS}_{ARCH}`
+
+Examples:
+- `linux_amd64`
+- `darwin_arm64`
+- `windows_amd64`
+
+## Package Authentication
+
+Terraform verifies provider packages to ensure integrity and authenticity.
+
+### Authentication Types
+
+The `PackageAuthentication` system (`internal/getproviders/package_authentication.go`) supports:
+
+1. **Cryptographic Signatures**: GPG signatures from provider authors
+2. **Checksums**: SHA256 hash verification
+3. **Registry Verification**: Trust model based on registry signatures
+
+### Authentication Results
+
+```go
+type PackageAuthenticationResult struct {
+    result packageAuthenticationResult
+    KeyID  string
+}
+```
+
+**Result Types**:
+- `officialProvider`: Signed by HashiCorp
+- `partnerProvider`: Signed by HashiCorp partner
+- `communityProvider`: Self-signed by provider author
+- `verifiedChecksum`: Checksum-only verification
+- `unauthenticated`: No verification performed
+
+### Signature Verification Process
+
+1. Download provider package and signature file
+2. Retrieve signing key from registry or keyring
+3. Verify GPG signature against package
+4. Verify package checksum matches published hashes
+5. Return authentication result
+
+## Provider Caching
+
+Terraform caches downloaded providers to optimize performance.
+
+### Global Plugin Cache
+
+Enable global caching in CLI configuration:
+
+```hcl
+plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"
+```
+
+**Benefits**:
+- Shared cache across all Terraform projects
+- Reduced bandwidth usage
+- Faster initialization
+
+**Directory Structure**:
+```
+~/.terraform.d/plugin-cache/
+  registry.terraform.io/
+    hashicorp/
+      aws/
+        5.31.0/
+          linux_amd64/
+            terraform-provider-aws_v5.31.0_x5
+```
+
+### Per-Project Cache
+
+Without global cache, providers are installed per-project:
+
+```
+.terraform/
+  providers/
+    registry.terraform.io/
+      hashicorp/
+        aws/
+          5.31.0/
+            linux_amd64/
+```
+
+### Schema Caching
+
+Provider schemas are cached in memory to avoid repeated RPC calls (`internal/plugin/grpc_provider.go:86`):
+
+```go
+if resp, ok := providers.SchemaCache.Get(p.Addr); ok {
+    return resp  // Return cached schema
+}
+```
+
+Providers with `GetProviderSchemaOptional` capability can skip schema fetching entirely.
+
+## Installation Workflow
+
+The complete installation workflow (`provider_source.go:26`):
+
+### 1. Parse Configuration
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+```
+
+### 2. Resolve Provider Sources
+
+Terraform builds a multi-source configuration:
+
+```go
+func providerSource(configs []*cliconfig.ProviderInstallation, services *disco.Disco) (getproviders.Source, tfdiags.Diagnostics) {
+    if len(configs) == 0 {
+        return implicitProviderSource(services), nil
+    }
+    return explicitProviderSource(config, services)
+}
+```
+
+### 3. Query Available Versions
+
+```go
+versions, warnings, err := source.AvailableVersions(ctx, provider)
+```
+
+Returns a sorted list of available versions from all configured sources.
+
+### 4. Select Version
+
+Apply version constraints to find the best match:
+
+```go
+selectedVersion := versions.Filter(constraints).Newest()
+```
+
+### 5. Retrieve Package Metadata
+
+```go
+meta, err := source.PackageMeta(ctx, provider, version, platform)
+```
+
+Returns:
+- Download location
+- Authentication requirements
+- Package checksums
+
+### 6. Download Package
+
+Download the provider package from the location specified in metadata.
+
+### 7. Authenticate Package
+
+Verify cryptographic signatures and checksums:
+
+```go
+result, err := meta.Authentication.Authenticate(packagePath)
+```
+
+### 8. Install to Cache
+
+Extract and install the provider to the appropriate cache directory.
+
+### 9. Create Symlink
+
+Create a symlink in `.terraform/providers` pointing to the cached package.
+
+## Lock File
+
+Terraform creates a dependency lock file (`.terraform.lock.hcl`) to ensure consistent provider versions:
+
+```hcl
+provider "registry.terraform.io/hashicorp/aws" {
+  version     = "5.31.0"
+  constraints = "~> 5.0"
+  hashes = [
+    "h1:abc123...",
+    "zh:def456...",
+  ]
+}
+```
+
+**Lock File Fields**:
+- `version`: Selected provider version
+- `constraints`: Version constraints from configuration
+- `hashes`: Cryptographic hashes for all platforms
+
+**Benefits**:
+- Ensures reproducible builds
+- Prevents unexpected version changes
+- Supports multiple platform hashes for team collaboration
+
+## Troubleshooting
+
+### Provider Not Found
+
+**Error**: Provider not available for your platform
+
+**Solutions**:
+- Verify platform compatibility on the provider registry
+- Check if provider supports your OS/architecture
+- Contact provider maintainer for platform support
+
+### Authentication Failures
+
+**Error**: Failed to verify provider signature
+
+**Solutions**:
+- Verify network connectivity to registry
+- Check for corporate proxy interference
+- Update Terraform to the latest version
+- Report issue to provider maintainer
+
+### Version Conflicts
+
+**Error**: No available version meets the constraints
+
+**Solutions**:
+- Review version constraints in `required_providers`
+- Check lock file for locked versions
+- Run `terraform init -upgrade` to update providers
+
+## Best Practices
+
+### Pin Provider Versions
+
+Use specific version constraints to ensure reproducibility:
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "5.31.0"  # Exact version
+    }
+  }
+}
+```
+
+### Use Global Plugin Cache
+
+Enable global caching to optimize disk usage and download times:
+
+```hcl
+plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"
+```
+
+### Commit Lock Files
+
+Always commit `.terraform.lock.hcl` to version control for consistent team deployments.
+
+### Configure Network Mirrors
+
+For corporate environments, use network mirrors to centralize provider distribution:
+
+```hcl
+provider_installation {
+  network_mirror {
+    url = "https://terraform-mirror.corp.example.com/"
+  }
+  direct {
+    exclude = ["*/*"]  # Prevent direct downloads
+  }
+}
+```
+
+## Next Steps
+
+- [Provider Configuration](/providers/configuration) - Learn how to configure providers
+- [Provider Development](/providers/development) - Build your own providers
+- [Providers Overview](/providers/overview) - Understand provider architecture

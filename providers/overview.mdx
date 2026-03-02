@@ -1,0 +1,168 @@
+---
+title: "Providers Overview"
+description: "Learn about Terraform providers, how they work, and their role in managing infrastructure resources."
+---
+
+## What are Providers?
+
+Providers are plugins that enable Terraform to interact with external APIs and services. They define the resource types and data sources that Terraform can manage, acting as the bridge between Terraform's declarative configuration language and the actual infrastructure platforms.
+
+## Provider Architecture
+
+Terraform's provider system is built on a plugin architecture that separates core Terraform functionality from provider-specific logic.
+
+### Provider Interface
+
+All providers implement the `providers.Interface` defined in `internal/providers/provider.go:17`. This interface defines the complete contract for a resource provider plugin:
+
+```go
+type Interface interface {
+    // Schema and configuration
+    GetProviderSchema() GetProviderSchemaResponse
+    ValidateProviderConfig(ValidateProviderConfigRequest) ValidateProviderConfigResponse
+    ConfigureProvider(ConfigureProviderRequest) ConfigureProviderResponse
+    
+    // Resource operations
+    ReadResource(ReadResourceRequest) ReadResourceResponse
+    PlanResourceChange(PlanResourceChangeRequest) PlanResourceChangeResponse
+    ApplyResourceChange(ApplyResourceChangeRequest) ApplyResourceChangeResponse
+    ImportResourceState(ImportResourceStateRequest) ImportResourceStateResponse
+    UpgradeResourceState(UpgradeResourceStateRequest) UpgradeResourceStateResponse
+    
+    // Data source operations
+    ReadDataSource(ReadDataSourceRequest) ReadDataSourceResponse
+    
+    // Additional capabilities
+    CallFunction(CallFunctionRequest) CallFunctionResponse
+    Stop() error
+    Close() error
+}
+```
+
+Key methods include:
+
+- **GetProviderSchema**: Returns the complete schema for the provider, including all resource types, data sources, ephemeral resources, and provider configuration
+- **ConfigureProvider**: Initializes the provider with user-supplied configuration
+- **ReadResource**: Refreshes a resource's current state from the remote API
+- **PlanResourceChange**: Computes the planned changes for a resource
+- **ApplyResourceChange**: Executes the planned changes and returns the final state
+
+### Provider Schema
+
+The `GetProviderSchemaResponse` structure (`internal/providers/provider.go:172`) contains:
+
+- **Provider**: Schema for the provider configuration itself
+- **ResourceTypes**: Map of managed resource types to their schemas
+- **DataSources**: Map of data sources to their schemas
+- **EphemeralResourceTypes**: Short-lived resources (credentials, tokens)
+- **Functions**: Provider-contributed functions
+- **ServerCapabilities**: Optional features supported by the provider
+
+```go
+type GetProviderSchemaResponse struct {
+    Provider               Schema
+    ProviderMeta          Schema
+    ResourceTypes         map[string]Schema
+    DataSources           map[string]Schema
+    EphemeralResourceTypes map[string]Schema
+    Functions             map[string]FunctionDecl
+    ServerCapabilities    ServerCapabilities
+    Diagnostics           tfdiags.Diagnostics
+}
+```
+
+## Provider Lifecycle
+
+### 1. Discovery and Installation
+
+Terraform discovers and installs providers during the `terraform init` command:
+
+1. Parses `required_providers` block to determine which providers are needed
+2. Consults provider sources to find available versions
+3. Downloads provider binaries matching the platform and version constraints
+4. Verifies package authenticity using cryptographic signatures
+5. Installs providers to the local plugin cache
+
+### 2. Initialization
+
+When Terraform needs a provider:
+
+1. Launches the provider as a subprocess
+2. Establishes gRPC communication channel
+3. Performs plugin handshake to verify compatibility
+4. Calls `GetProviderSchema` to retrieve the provider's schema
+5. Calls `ConfigureProvider` with user-supplied configuration
+
+### 3. Operation
+
+During plan and apply operations:
+
+1. **Plan Phase**:
+   - Calls `ReadResource` to refresh current state
+   - Calls `PlanResourceChange` to compute proposed changes
+   - Validates that planned changes are acceptable
+
+2. **Apply Phase**:
+   - Calls `ApplyResourceChange` to execute planned changes
+   - Updates state with the new resource configuration
+
+### 4. Cleanup
+
+After operations complete:
+
+1. Calls `Stop` to signal the provider to halt in-flight operations
+2. Calls `Close` to shut down the provider gracefully
+3. Terminates the plugin process
+
+## Provider Factory
+
+Providers are instantiated through the `Factory` function type (`internal/providers/factory.go:6`):
+
+```go
+type Factory func() (Interface, error)
+```
+
+The factory pattern allows Terraform to create provider instances on demand and support both:
+- **Built-in providers**: Compiled directly into Terraform
+- **External providers**: Separate plugin binaries
+
+## Communication Protocol
+
+Providers communicate with Terraform core using gRPC over protocol version 5. The `GRPCProvider` implementation (`internal/plugin/grpc_provider.go`) handles:
+
+- Protocol serialization/deserialization
+- Type conversion between Go types and protobuf messages
+- Error handling and diagnostics propagation
+- Schema caching for performance
+
+## Provider Capabilities
+
+Providers can declare optional capabilities through `ServerCapabilities` (`internal/providers/provider.go:277`):
+
+```go
+type ServerCapabilities struct {
+    PlanDestroy               bool // Provider expects PlanResourceChange for destroy
+    GetProviderSchemaOptional bool // Schema can be cached
+    MoveResourceState         bool // Supports resource type migration
+    GenerateResourceConfig    bool // Can generate config from state
+}
+```
+
+These capabilities enable providers to opt into newer protocol features while maintaining backward compatibility.
+
+## Provider Sources
+
+Terraform supports multiple provider sources (`internal/getproviders/source.go:14`):
+
+- **Registry Source**: Downloads providers from public or private registries
+- **Filesystem Mirror**: Uses locally cached provider packages
+- **Network Mirror**: Fetches providers from HTTP/HTTPS mirrors
+- **Dev Overrides**: Points to locally built provider binaries for development
+
+See the [Installation](/providers/installation) page for details on provider sources and caching.
+
+## Next Steps
+
+- [Provider Configuration](/providers/configuration) - Learn how to configure providers
+- [Provider Installation](/providers/installation) - Understand provider installation and caching
+- [Provider Development](/providers/development) - Build your own providers

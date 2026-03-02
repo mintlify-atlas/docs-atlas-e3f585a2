@@ -1,0 +1,84 @@
+---
+title: terraform import
+description: The terraform import command imports existing infrastructure into your Terraform state.
+---
+
+# Command: import
+
+The `terraform import` command imports existing infrastructure resources into Terraform, allowing you to manage them with Terraform going forward.
+
+## Usage
+
+```bash
+terraform import [options] ADDRESS ID
+```
+
+Import will find the existing resource from ID and import it into your Terraform state at the given ADDRESS.
+
+ADDRESS must be a valid [resource address](/terraform/cli/state/resource-addressing). Because any resource address is valid, the import command can import resources into modules as well directly into the root of your state.
+
+ID is resource-specific and depends on the resource type being imported. Refer to the provider documentation for the resource type you're importing to determine what the ID should be.
+
+<Warning>
+The current implementation of Terraform import can only import resources into the state. It does not generate configuration. A future version of Terraform will also generate configuration.
+
+Because of this, prior to running `terraform import` it is necessary to write a `resource` configuration block for the resource manually, to which the imported object will be attached.
+</Warning>
+
+This command will not modify your infrastructure, but it will make network requests to inspect parts of your infrastructure relevant to the resource being imported.
+
+## Options
+
+- `-config=path` - Path to a directory of Terraform configuration files to use to configure the provider. Defaults to the current working directory. If no config files are present, they must be provided via the input prompts or environment variables.
+
+- `-input=false` - Disable interactive input prompts.
+
+- `-lock=false` - Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+
+- `-lock-timeout=DURATION` - Duration to retry a state lock. Default is `0s` (zero seconds), which causes immediate failure if the lock is already held by another process.
+
+- `-no-color` - If specified, output won't contain any color.
+
+- `-var 'NAME=VALUE'` - Set a value for one of the input variables in the root module of the configuration. Use this option multiple times to set more than one variable. This is only useful with the `-config` flag.
+
+- `-var-file=FILENAME` - Set values for potentially many input variables declared in the root module of the configuration, using definitions from a ["tfvars" file](/terraform/language/values/variables#variable-definitions-tfvars-files). Use this option multiple times to include values from more than one file.
+
+- `-ignore-remote-version` - A rare option used for the remote backend only. See the [remote backend documentation](/terraform/language/settings/backends/remote) for more information.
+
+For configurations using the [local backend](/terraform/language/settings/backends/local) only, `terraform import` also accepts the legacy options `-state`, `-state-out`, and `-backup`.
+
+## Example
+
+Import an AWS EC2 instance:
+
+```bash
+terraform import aws_instance.example i-abcd1234
+```
+
+Import a resource into a module:
+
+```bash
+terraform import module.foo.aws_instance.bar i-abcd1234
+```
+
+## Provider Configuration
+
+Terraform will attempt to load configuration files that configure the provider being used for import. If no configuration files are present, you must provide configuration for the provider through environment variables or by specifying the `-config` flag.
+
+The `-var` and `-var-file` flags can be used to provide values for variables in the provider configuration.
+
+## Example: Import into Resource
+
+First, write a resource block for it in your configuration, using a `resource` block:
+
+```hcl
+resource "aws_instance" "example" {
+  # ...instance configuration...
+}
+```
+
+Now `terraform import` can be run to attach an existing instance to this resource configuration:
+
+```bash
+terraform import aws_instance.example i-abcd1234
+```

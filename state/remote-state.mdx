@@ -1,0 +1,433 @@
+---
+title: Remote State Data Source
+description: Access and reference output values from other Terraform configurations using remote state
+---
+
+## Overview
+
+The `terraform_remote_state` data source allows Terraform configurations to access output values from other Terraform configurations. This enables sharing data between separately managed infrastructure components.
+
+## Use Cases
+
+### Infrastructure Composition
+
+Remote state is commonly used to compose infrastructure across multiple Terraform configurations:
+
+- **Networking**: Reference VPC IDs and subnet IDs from a network configuration
+- **Platform Services**: Access database endpoints from a data layer configuration  
+- **Application Deployment**: Reference load balancer DNS names from infrastructure config
+- **Shared Resources**: Access security group IDs, IAM roles, and other shared resources
+
+### Organization Patterns
+
+Remote state enables several organizational patterns:
+
+1. **Layer Separation**: Network, platform, and application layers managed separately
+2. **Team Boundaries**: Different teams manage different infrastructure components
+3. **Update Isolation**: Changes to one component don't require re-planning others
+4. **Blast Radius Reduction**: Limit the scope of infrastructure changes
+
+## State Output Values
+
+Only root module output values are accessible via remote state:
+
+```go
+// From internal/states/state.go:33
+type State struct {
+    // RootOutputValues contains output values from root module only
+    RootOutputValues map[string]*OutputValue
+}
+```
+
+<Warning>
+Output values from child modules are not persisted in state and cannot be accessed remotely.
+</Warning>
+
+**Reference**: `internal/states/state.go:33-38`
+
+### Output Value Structure
+
+```go
+// From internal/states/output_value.go
+type OutputValue struct {
+    Addr      addrs.AbsOutputValue
+    Value     cty.Value  // The actual output value
+    Sensitive bool       // Whether value is marked sensitive
+}
+```
+
+Sensitive outputs are still transmitted but marked for careful handling.
+
+**Reference**: `internal/states/output_value.go`
+
+## Setting Output Values
+
+Output values are set during state operations:
+
+```go
+// From internal/states/state.go:315
+func (s *State) SetOutputValue(addr addrs.AbsOutputValue, value cty.Value, sensitive bool) {
+    if !addr.Module.IsRoot() {
+        return  // Only root module outputs are stored
+    }
+    s.RootOutputValues[addr.OutputValue.Name] = &OutputValue{
+        Addr:      addr,
+        Value:     value,
+        Sensitive: sensitive,
+    }
+}
+```
+
+**Reference**: `internal/states/state.go:315-324`
+
+## State Manager Output Access
+
+Backends provide access to output values through the state manager:
+
+```go
+// State managers can retrieve output values
+outputs, err := stateMgr.GetRootOutputValues(ctx)
+```
+
+This allows remote state data sources to fetch outputs without loading the entire state.
+
+**Reference**: `internal/states/statemgr/`
+
+## Remote State Configuration
+
+### Local Backend Example
+
+```hcl
+data "terraform_remote_state" "network" {
+  backend = "local"
+  
+  config = {
+    path = "../networking/terraform.tfstate"
+  }
+}
+
+# Access outputs
+resource "aws_instance" "app" {
+  subnet_id = data.terraform_remote_state.network.outputs.subnet_id
+  vpc_security_group_ids = [
+    data.terraform_remote_state.network.outputs.app_security_group_id
+  ]
+}
+```
+
+### S3 Backend Example
+
+```hcl
+data "terraform_remote_state" "platform" {
+  backend = "s3"
+  
+  config = {
+    bucket = "my-terraform-state"
+    key    = "platform/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+
+# Reference database endpoint
+resource "aws_instance" "app" {
+  user_data = templatefile("init.sh", {
+    db_endpoint = data.terraform_remote_state.platform.outputs.database_endpoint
+  })
+}
+```
+
+### Terraform Cloud Example
+
+```hcl
+data "terraform_remote_state" "networking" {
+  backend = "remote"
+  
+  config = {
+    organization = "my-org"
+    
+    workspaces = {
+      name = "networking-production"
+    }
+  }
+}
+```
+
+## Output Value Best Practices
+
+### Explicit Output Declarations
+
+Always explicitly declare outputs you intend to share:
+
+```hcl
+# networking/outputs.tf
+output "vpc_id" {
+  description = "ID of the VPC"
+  value       = aws_vpc.main.id
+}
+
+output "subnet_ids" {
+  description = "List of subnet IDs"
+  value       = aws_subnet.private[*].id
+}
+
+output "database_security_group_id" {
+  description = "Security group for database access"
+  value       = aws_security_group.database.id
+}
+```
+
+### Sensitive Data Handling
+
+```hcl
+output "database_password" {
+  description = "Database master password"
+  value       = random_password.db_password.result
+  sensitive   = true  # Marked but still accessible remotely
+}
+```
+
+<Warning>
+Marking an output as sensitive does not prevent it from being accessible via remote state. It only prevents Terraform from displaying it in logs and console output.
+</Warning>
+
+### Structured Outputs
+
+Use objects for related values:
+
+```hcl
+output "database" {
+  description = "Database connection information"
+  value = {
+    endpoint = aws_db_instance.main.endpoint
+    port     = aws_db_instance.main.port
+    name     = aws_db_instance.main.name
+  }
+}
+
+# Consumer usage
+resource "app_config" "main" {
+  db_host = split(":", data.terraform_remote_state.platform.outputs.database.endpoint)[0]
+  db_port = data.terraform_remote_state.platform.outputs.database.port
+  db_name = data.terraform_remote_state.platform.outputs.database.name
+}
+```
+
+## State Schema Compatibility
+
+Remote state consumers depend on output schemas:
+
+### Version Compatibility
+
+1. **Additive Changes**: Adding new outputs is safe
+2. **Breaking Changes**: Removing or renaming outputs breaks consumers
+3. **Type Changes**: Changing output types can break consumers
+
+### Handling Schema Changes
+
+```hcl
+# Old output (deprecated)
+output "subnet_id" {
+  description = "DEPRECATED: Use subnet_ids instead"
+  value       = aws_subnet.private[0].id
+}
+
+# New output (preferred)
+output "subnet_ids" {
+  description = "List of all subnet IDs"
+  value       = aws_subnet.private[*].id
+}
+```
+
+Maintain deprecated outputs during migration periods.
+
+## State Access Control
+
+### Backend Permissions
+
+Remote state access requires backend read permissions:
+
+#### S3 Backend
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::my-terraform-state/*/terraform.tfstate"
+    }
+  ]
+}
+```
+
+#### Terraform Cloud
+
+Use workspace sharing and team permissions to control access.
+
+<Note>
+Anyone with read access to the state backend can access all output values, including those marked sensitive.
+</Note>
+
+## Alternative Patterns
+
+While remote state is powerful, consider alternatives:
+
+### Service Discovery
+
+For dynamic infrastructure, use service discovery:
+
+```hcl
+# Instead of remote state
+data "consul_service" "database" {
+  name = "postgres"
+}
+
+# Or AWS Service Discovery
+data "aws_service_discovery_service" "api" {
+  name         = "my-api"
+  namespace_id = aws_service_discovery_private_dns_namespace.main.id
+}
+```
+
+### Parameter Store / Secrets Manager
+
+For configuration values:
+
+```hcl
+data "aws_ssm_parameter" "vpc_id" {
+  name = "/infrastructure/vpc/id"
+}
+
+data "aws_secretsmanager_secret_version" "db_creds" {
+  secret_id = "production/database/credentials"
+}
+```
+
+### Data Sources
+
+Query resources directly:
+
+```hcl
+data "aws_vpc" "main" {
+  tags = {
+    Environment = "production"
+  }
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.main.id]
+  }
+  
+  tags = {
+    Tier = "private"
+  }
+}
+```
+
+## Performance Considerations
+
+Remote state access has performance implications:
+
+### State Size
+
+Large state files slow down remote state reads:
+- Keep state files focused
+- Split large infrastructures into logical components
+- Avoid storing large data in outputs
+
+### Network Latency
+
+Remote backends add network latency:
+- Use regional backends when possible
+- Consider caching strategies for CI/CD
+
+### Plan Performance
+
+Each remote state data source is fetched during planning:
+
+```hcl
+# Each of these requires a backend read
+data "terraform_remote_state" "network" { ... }
+data "terraform_remote_state" "platform" { ... }
+data "terraform_remote_state" "security" { ... }
+```
+
+## Troubleshooting
+
+### Output Not Found
+
+```
+Error: Unsupported attribute
+
+This object does not have an attribute named "vpc_id".
+```
+
+**Solution**: Verify the output exists in the remote state configuration:
+
+```bash
+# Check remote state outputs
+terraform output -state=path/to/terraform.tfstate
+```
+
+### Backend Configuration Mismatch
+
+```
+Error: Failed to load state
+
+Error loading state from backend: configuration mismatch
+```
+
+**Solution**: Ensure backend configuration matches the target workspace.
+
+### Permission Denied
+
+```
+Error: Error loading state: AccessDenied
+```
+
+**Solution**: Verify IAM permissions for the backend storage.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Minimize Cross-State Dependencies">
+    Keep cross-configuration dependencies minimal. Tight coupling makes refactoring difficult.
+  </Accordion>
+  
+  <Accordion title="Document Output Contracts">
+    Treat outputs as API contracts. Document types, formats, and deprecation plans.
+  </Accordion>
+  
+  <Accordion title="Version Outputs Carefully">
+    Use semantic versioning for breaking changes. Maintain backward compatibility when possible.
+  </Accordion>
+  
+  <Accordion title="Avoid Sensitive Data in Outputs">
+    While technically possible, avoid storing highly sensitive data in state outputs. Use secrets management instead.
+  </Accordion>
+  
+  <Accordion title="Use Descriptive Output Names">
+    Choose clear, stable output names that reflect their purpose and content.
+  </Accordion>
+  
+  <Accordion title="Test Cross-Configuration Changes">
+    When changing outputs, test impact on all consuming configurations.
+  </Accordion>
+</AccordionGroup>
+
+## Related Resources
+
+- [State Overview](/state/overview) - Core state concepts
+- [State Backends](/state/backends) - Backend configuration
+- [Output Values](/essentials/outputs) - Defining outputs in configurations
+
+## Source Code References
+
+- **Output Values**: `internal/states/output_value.go`
+- **State Structure**: `internal/states/state.go:315-332`
+- **State Manager**: `internal/states/statemgr/`

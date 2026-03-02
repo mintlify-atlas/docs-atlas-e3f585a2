@@ -1,0 +1,414 @@
+---
+title: OSS Backend
+description: Store Terraform state in Alibaba Cloud OSS (Object Storage Service).
+---
+
+# OSS Backend
+
+The **OSS** backend stores state in Alibaba Cloud Object Storage Service (OSS) with optional TableStore locking.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/oss/backend.go`
+
+## Use Cases
+
+- Managing Alibaba Cloud infrastructure
+- Teams using Alibaba Cloud services
+- China region compliance requirements
+- Multi-cloud with Alibaba Cloud component
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket = "terraform-state-bucket"
+    prefix = "terraform/state"
+    region = "cn-hangzhou"
+  }
+}
+```
+
+## Required Configuration
+
+### bucket
+- **Type:** String
+- **Required:** Yes
+- **Description:** The name of the OSS bucket
+
+### region
+- **Type:** String
+- **Optional:** Yes (if environment variable is set)
+- **Environment Variables:** `ALICLOUD_REGION`, `ALIBABA_CLOUD_REGION`, `ALICLOUD_DEFAULT_REGION`
+- **Description:** The region where the OSS bucket is located
+
+## Optional Configuration
+
+### prefix
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"env:"`
+- **Description:** The directory where state files will be saved inside the bucket
+
+**Important:** Must not start with `/` or `./`
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket = "terraform-state-bucket"
+    prefix = "prod/terraform/state"  # Valid
+    # prefix = "/terraform/state"     # Invalid
+  }
+}
+```
+
+### key
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"terraform.tfstate"`
+- **Description:** The path of the state file inside the bucket
+
+**Important:** Cannot start or end with `/`
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket = "terraform-state-bucket"
+    key    = "production.tfstate"  # Valid
+    # key  = "/state.tfstate"       # Invalid
+  }
+}
+```
+
+## Authentication
+
+The OSS backend supports multiple authentication methods:
+
+### 1. Access Key and Secret Key
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket     = "terraform-state-bucket"
+    region     = "cn-hangzhou"
+    access_key = "<access-key-id>"
+    secret_key = "<access-key-secret>"
+  }
+}
+```
+
+**Environment Variables:**
+- `ALICLOUD_ACCESS_KEY` / `ALIBABA_CLOUD_ACCESS_KEY_ID` / `ALICLOUD_ACCESS_KEY_ID`
+- `ALICLOUD_SECRET_KEY` / `ALIBABA_CLOUD_ACCESS_KEY_SECRET` / `ALICLOUD_ACCESS_KEY_SECRET`
+
+### 2. Security Token (STS)
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket         = "terraform-state-bucket"
+    region         = "cn-hangzhou"
+    access_key     = "<temporary-access-key>"
+    secret_key     = "<temporary-secret-key>"
+    security_token = "<security-token>"
+  }
+}
+```
+
+**Environment Variables:**
+- `ALICLOUD_SECURITY_TOKEN`
+- `ALIBABA_CLOUD_SECURITY_TOKEN`
+
+### 3. ECS RAM Role
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket        = "terraform-state-bucket"
+    region        = "cn-hangzhou"
+    ecs_role_name = "TerraformRole"
+  }
+}
+```
+
+**Environment Variables:**
+- `ALICLOUD_ECS_ROLE_NAME`
+- `ALIBABA_CLOUD_ECS_METADATA`
+
+### 4. Shared Credentials File
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket                  = "terraform-state-bucket"
+    region                  = "cn-hangzhou"
+    profile                 = "production"
+    shared_credentials_file = "~/.aliyun/config.json"
+  }
+}
+```
+
+**Default path:** `~/.aliyun/config.json`
+
+**Environment Variables:**
+- `ALICLOUD_PROFILE` / `ALIBABA_CLOUD_PROFILE`
+- `ALICLOUD_SHARED_CREDENTIALS_FILE` / `ALIBABA_CLOUD_CREDENTIALS_FILE`
+
+### 5. Assume Role
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket     = "terraform-state-bucket"
+    region     = "cn-hangzhou"
+    access_key = "<access-key-id>"
+    secret_key = "<access-key-secret>"
+    
+    assume_role_role_arn          = "acs:ram::123456789012:role/TerraformRole"
+    assume_role_session_name      = "terraform-session"
+    assume_role_session_expiration = 3600
+  }
+}
+```
+
+**Environment Variables:**
+- `ALICLOUD_ASSUME_ROLE_ARN` / `ALIBABA_CLOUD_ROLE_ARN`
+- `ALICLOUD_ASSUME_ROLE_SESSION_NAME` / `ALIBABA_CLOUD_ROLE_SESSION_NAME`
+- `ALICLOUD_ASSUME_ROLE_SESSION_EXPIRATION`
+
+**Assume Role Options:**
+
+- **assume_role_role_arn** - ARN of the RAM role to assume
+- **assume_role_session_name** - Session name for the role
+- **assume_role_policy** - Policy to restrict permissions
+- **assume_role_session_expiration** - Duration in seconds (900-3600)
+
+## Encryption
+
+### Server-Side Encryption
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket  = "terraform-state-bucket"
+    region  = "cn-hangzhou"
+    encrypt = true
+  }
+}
+```
+
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `false`
+- **Description:** Enable server-side encryption of the state file
+
+## Access Control
+
+### ACL (Access Control List)
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket = "terraform-state-bucket"
+    region = "cn-hangzhou"
+    acl    = "private"
+  }
+}
+```
+
+**Valid values:**
+- `private` (default)
+- `public-read`
+- `public-read-write`
+
+## State Locking with TableStore
+
+### tablestore_table
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `""`
+- **Description:** TableStore table name for state locking and consistency
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket                   = "terraform-state-bucket"
+    region                   = "cn-hangzhou"
+    tablestore_endpoint      = "https://terraform-state.cn-hangzhou.ots.aliyuncs.com"
+    tablestore_instance_name = "terraform-state"
+    tablestore_table         = "terraform_lock"
+  }
+}
+```
+
+**Environment Variables:**
+- `ALICLOUD_TABLESTORE_ENDPOINT` / `ALIBABA_CLOUD_TABLESTORE_ENDPOINT`
+
+## Custom Endpoints
+
+### endpoint
+- **Type:** String
+- **Optional:** Yes
+- **Environment Variables:** `ALICLOUD_OSS_ENDPOINT`, `ALIBABA_CLOUD_OSS_ENDPOINT`, `OSS_ENDPOINT`
+- **Description:** Custom endpoint for the OSS API
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket   = "terraform-state-bucket"
+    region   = "cn-hangzhou"
+    endpoint = "https://oss-cn-hangzhou-internal.aliyuncs.com"
+  }
+}
+```
+
+### sts_endpoint
+- **Type:** String
+- **Optional:** Yes
+- **Environment Variables:** `ALICLOUD_STS_ENDPOINT`, `ALIBABA_CLOUD_STS_ENDPOINT`
+- **Description:** Custom endpoint for the STS API
+
+### tablestore_endpoint
+- **Type:** String
+- **Optional:** Yes
+- **Environment Variables:** `ALICLOUD_TABLESTORE_ENDPOINT`, `ALIBABA_CLOUD_TABLESTORE_ENDPOINT`
+- **Description:** Custom endpoint for the TableStore API
+
+## Workspaces
+
+The OSS backend supports workspaces using the prefix:
+
+```
+<prefix>/default/terraform.tfstate
+<prefix>/dev/terraform.tfstate
+<prefix>/prod/terraform.tfstate
+```
+
+## Configuration Options Summary
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `bucket` | string | Yes | - | OSS bucket name |
+| `region` | string | Yes* | - | Alibaba Cloud region |
+| `prefix` | string | No | `env:` | State file directory prefix |
+| `key` | string | No | `terraform.tfstate` | State file name |
+| `access_key` | string | No | - | Access key ID |
+| `secret_key` | string | No | - | Access key secret |
+| `security_token` | string | No | - | Security token |
+| `ecs_role_name` | string | No | - | ECS RAM role name |
+| `profile` | string | No | - | Profile name |
+| `shared_credentials_file` | string | No | - | Credentials file path |
+| `assume_role_role_arn` | string | No | - | RAM role ARN |
+| `assume_role_session_name` | string | No | - | Assume role session name |
+| `assume_role_policy` | string | No | - | Assume role policy |
+| `assume_role_session_expiration` | number | No | - | Session duration (900-3600) |
+| `encrypt` | bool | No | `false` | Enable encryption |
+| `acl` | string | No | `""` | Object ACL |
+| `endpoint` | string | No | - | OSS endpoint |
+| `sts_endpoint` | string | No | - | STS endpoint |
+| `tablestore_endpoint` | string | No | - | TableStore endpoint |
+| `tablestore_instance_name` | string | No | - | TableStore instance name |
+| `tablestore_table` | string | No | - | TableStore table name |
+
+## Example: Production with Encryption and Locking
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket  = "prod-terraform-state"
+    prefix  = "production/terraform/state"
+    key     = "terraform.tfstate"
+    region  = "cn-hangzhou"
+    encrypt = true
+    acl     = "private"
+    
+    # Authentication
+    profile = "production"
+    
+    # State locking
+    tablestore_endpoint      = "https://terraform-lock.cn-hangzhou.ots.aliyuncs.com"
+    tablestore_instance_name = "terraform-state-lock"
+    tablestore_table         = "state_lock"
+  }
+}
+```
+
+## Example: Using ECS RAM Role
+
+```hcl
+terraform {
+  backend "oss" {
+    bucket        = "terraform-state"
+    region        = "cn-beijing"
+    ecs_role_name = "TerraformECSRole"
+  }
+}
+```
+
+## RAM Policy Requirements
+
+Minimum permissions for the OSS bucket:
+
+```json
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:GetObject",
+        "oss:PutObject",
+        "oss:DeleteObject",
+        "oss:ListObjects"
+      ],
+      "Resource": [
+        "acs:oss:*:*:terraform-state-bucket/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:ListBuckets",
+        "oss:GetBucketLocation"
+      ],
+      "Resource": [
+        "acs:oss:*:*:*"
+      ]
+    }
+  ]
+}
+```
+
+For TableStore locking:
+
+```json
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ots:GetRow",
+        "ots:PutRow",
+        "ots:UpdateRow",
+        "ots:DeleteRow"
+      ],
+      "Resource": [
+        "acs:ots:*:*:instance/terraform-state-lock/table/state_lock"
+      ]
+    }
+  ]
+}
+```
+
+## Best Practices
+
+1. **Enable encryption** for production state files
+2. **Use RAM roles** instead of access keys when possible
+3. **Enable TableStore locking** for team collaboration
+4. **Separate buckets** for different environments
+5. **Use internal endpoints** when running within Alibaba Cloud
+6. **Enable bucket versioning** for state history
+7. **Restrict bucket access** with appropriate ACLs
+8. **Use assume role** for cross-account access

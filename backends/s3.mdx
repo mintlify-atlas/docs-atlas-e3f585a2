@@ -1,0 +1,356 @@
+---
+title: S3 Backend
+description: Store Terraform state in Amazon S3 with DynamoDB locking.
+---
+
+# S3 Backend
+
+The **S3** backend stores state as a given key in a given S3 bucket on Amazon Web Services (AWS). This backend supports state locking and consistency checking via DynamoDB.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/s3/backend.go`
+
+## Use Cases
+
+- Team collaboration on AWS infrastructure
+- Production environments requiring state locking
+- Integration with AWS-based CI/CD pipelines
+- Compliance requirements for data residency
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "prod/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+```
+
+## Required Configuration
+
+### bucket
+- **Type:** String
+- **Required:** Yes
+- **Description:** The name of the S3 bucket
+
+### key
+- **Type:** String
+- **Required:** Yes
+- **Description:** The path to the state file inside the bucket
+
+The key must not:
+- Be empty
+- Contain `//` (double slashes)
+- Start or end with `/`
+
+### region
+- **Type:** String
+- **Optional:** Yes (if environment variables are set)
+- **Environment Variables:** `AWS_REGION`, `AWS_DEFAULT_REGION`
+- **Description:** AWS region of the S3 bucket and DynamoDB table
+
+## Authentication
+
+The S3 backend supports multiple authentication methods:
+
+### Static Credentials
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket     = "my-terraform-state"
+    key        = "terraform.tfstate"
+    region     = "us-east-1"
+    access_key = "AKIAIOSFODNN7EXAMPLE"
+    secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  }
+}
+```
+
+**Environment Variables:**
+- Access Key: `AWS_ACCESS_KEY_ID`
+- Secret Key: `AWS_SECRET_ACCESS_KEY`
+
+### Shared Credentials File
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket  = "my-terraform-state"
+    key     = "terraform.tfstate"
+    region  = "us-east-1"
+    profile = "production"
+    shared_credentials_files = ["/path/to/credentials"]
+  }
+}
+```
+
+**Environment Variables:**
+- `AWS_SHARED_CREDENTIALS_FILE`
+- `AWS_SHARED_CONFIG_FILE`
+
+### IAM Role Assumption
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    
+    assume_role {
+      role_arn     = "arn:aws:iam::123456789012:role/TerraformRole"
+      session_name = "terraform"
+      external_id  = "EXTERNAL_ID"
+    }
+  }
+}
+```
+
+**Assume Role Options:**
+
+- **role_arn** (Required) - The ARN of the IAM role to assume
+- **session_name** (Optional) - The session name to use
+- **duration** (Optional) - Duration between 15m and 12h (default: 1h)
+- **external_id** (Optional) - External ID for the role
+- **policy** (Optional) - IAM policy JSON to restrict permissions
+- **policy_arns** (Optional) - Set of policy ARNs to attach
+- **tags** (Optional) - Map of session tags
+- **transitive_tag_keys** (Optional) - Set of tag keys to pass to subsequent sessions
+
+### Web Identity Token
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    
+    assume_role_with_web_identity {
+      role_arn                = "arn:aws:iam::123456789012:role/WebIdentityRole"
+      session_name            = "terraform"
+      web_identity_token_file = "/path/to/token"
+    }
+  }
+}
+```
+
+## Encryption
+
+### Server-Side Encryption (SSE-S3)
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket  = "my-terraform-state"
+    key     = "terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
+  }
+}
+```
+
+### KMS Encryption (SSE-KMS)
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket     = "my-terraform-state"
+    key        = "terraform.tfstate"
+    region     = "us-east-1"
+    encrypt    = true
+    kms_key_id = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+  }
+}
+```
+
+### Customer-Provided Encryption (SSE-C)
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket           = "my-terraform-state"
+    key              = "terraform.tfstate"
+    region           = "us-east-1"
+    sse_customer_key = "<base64-encoded-32-byte-key>"
+  }
+}
+```
+
+**Environment Variable:** `AWS_SSE_CUSTOMER_KEY`
+
+**Note:** You cannot use both `kms_key_id` and `sse_customer_key` simultaneously.
+
+## State Locking
+
+### DynamoDB Locking (Deprecated)
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-lock"
+  }
+}
+```
+
+**Note:** The `dynamodb_table` attribute is deprecated in favor of `use_lockfile`.
+
+### Lock File (Recommended)
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket       = "my-terraform-state"
+    key          = "terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+  }
+}
+```
+
+## Workspaces
+
+The S3 backend supports workspaces using a key prefix:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    workspace_key_prefix = "env"
+  }
+}
+```
+
+**Default prefix:** `"env:"`
+
+With workspace `production`, the state is stored at:
+```
+env/production/terraform.tfstate
+```
+
+## Advanced Configuration
+
+### Custom Endpoints
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    
+    endpoints {
+      s3       = "https://s3.custom.endpoint"
+      dynamodb = "https://dynamodb.custom.endpoint"
+      sts      = "https://sts.custom.endpoint"
+      iam      = "https://iam.custom.endpoint"
+    }
+  }
+}
+```
+
+### Path-Style URLs
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "terraform.tfstate"
+    region         = "us-east-1"
+    use_path_style = true
+  }
+}
+```
+
+Uses `https://s3.amazonaws.com/bucket/key` instead of `https://bucket.s3.amazonaws.com/key`.
+
+### Skip Validations
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket                      = "my-terraform-state"
+    key                         = "terraform.tfstate"
+    region                      = "us-east-1"
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+  }
+}
+```
+
+Useful for S3-compatible APIs that don't support all AWS API features.
+
+### ACL Configuration
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    acl    = "bucket-owner-full-control"
+  }
+}
+```
+
+## All Configuration Options
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `bucket` | string | Yes | S3 bucket name |
+| `key` | string | Yes | Path to state file in bucket |
+| `region` | string | Yes* | AWS region |
+| `access_key` | string | No | AWS access key |
+| `secret_key` | string | No | AWS secret key |
+| `token` | string | No | MFA token |
+| `profile` | string | No | AWS profile name |
+| `shared_credentials_files` | list(string) | No | Paths to credentials files |
+| `encrypt` | bool | No | Enable server-side encryption |
+| `kms_key_id` | string | No | KMS key ARN |
+| `sse_customer_key` | string | No | Customer-provided encryption key |
+| `acl` | string | No | Canned ACL for state file |
+| `dynamodb_table` | string | No | DynamoDB table for locking (deprecated) |
+| `use_lockfile` | bool | No | Use lock file for state locking |
+| `workspace_key_prefix` | string | No | Prefix for workspace state paths |
+| `skip_credentials_validation` | bool | No | Skip credentials validation |
+| `skip_region_validation` | bool | No | Skip region validation |
+| `skip_s3_checksum` | bool | No | Skip S3 checksum validation |
+| `use_path_style` | bool | No | Use path-style S3 URLs |
+| `use_fips_endpoint` | bool | No | Use FIPS endpoints |
+| `use_dualstack_endpoint` | bool | No | Use dual-stack endpoints |
+
+## Example: Complete Configuration
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "company-terraform-state"
+    key    = "production/network/terraform.tfstate"
+    region = "us-west-2"
+    
+    encrypt        = true
+    kms_key_id     = "arn:aws:kms:us-west-2:123456789012:key/12345678-1234-1234-1234-123456789012"
+    use_lockfile   = true
+    acl            = "bucket-owner-full-control"
+    
+    workspace_key_prefix = "workspaces"
+    
+    assume_role {
+      role_arn     = "arn:aws:iam::123456789012:role/TerraformRole"
+      session_name = "terraform-prod"
+    }
+  }
+}
+```

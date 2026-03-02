@@ -1,0 +1,172 @@
+---
+title: terraform workspace delete
+description: The terraform workspace delete command deletes a workspace.
+---
+
+# terraform workspace delete
+
+The `terraform workspace delete` command deletes a workspace.
+
+## Usage
+
+```bash
+terraform [global options] workspace delete [OPTIONS] NAME
+```
+
+## Description
+
+This command deletes the specified workspace and its associated state. By default, Terraform prevents deletion of workspaces that contain managed resources to protect against accidental data loss.
+
+<Warning>
+Deleting a workspace removes Terraform's ability to track and manage the infrastructure in that workspace. If resources still exist, you'll need to manage or delete them manually outside of Terraform.
+</Warning>
+
+## Arguments
+
+- `NAME` - (Required) The name of the workspace to delete. Cannot be empty.
+
+## Options
+
+- `-force` - Remove a workspace even if it contains managed resources. Use with extreme caution. Default: `false`
+  
+  <Warning>
+  When using `-force`, Terraform will forget about managed resources, which must then be deleted manually outside of Terraform.
+  </Warning>
+
+- `-lock=true` - Lock the state file during the operation. Set to `false` to disable locking. Default: `true`
+  
+  <Warning>
+  Setting `-lock=false` is dangerous if others might concurrently run commands against the same workspace.
+  </Warning>
+
+- `-lock-timeout=0s` - Duration to wait for a state lock to be released before timing out. Accepts values like `10s` or `5m`. Default: `0s` (no retry)
+
+## Examples
+
+### Delete an Empty Workspace
+
+```bash
+terraform workspace delete development
+```
+
+Output:
+```
+Deleted workspace "development"!
+```
+
+### Force Delete a Non-Empty Workspace
+
+```bash
+terraform workspace delete -force staging
+```
+
+Output:
+```
+Deleted workspace "staging"!
+WARNING: "staging" was non-empty.
+The resources managed by the deleted workspace may still exist,
+but are no longer manageable by Terraform since the state has
+been deleted.
+```
+
+### Delete with Lock Timeout
+
+```bash
+terraform workspace delete production -lock-timeout=30s
+```
+
+## Behavior Notes
+
+### Non-Empty Workspace Protection
+
+If a workspace contains managed resources and you don't use the `-force` flag, the command will fail with a detailed error listing all managed resources:
+
+```
+Error: Workspace is not empty
+
+Workspace "staging" is currently tracking the following resource instances:
+
+  - aws_instance.web
+  - aws_s3_bucket.data
+  - aws_vpc.main
+
+Deleting this workspace would cause Terraform to lose track of any associated
+remote objects, which would then require you to delete them manually outside
+of Terraform. You should destroy these objects with Terraform before deleting
+the workspace.
+
+If you want to delete this workspace anyway, and have Terraform forget about
+these managed objects, use the -force option to disable this safety check.
+```
+
+### Cannot Delete Current Workspace
+
+You cannot delete the workspace that is currently selected. Switch to another workspace first:
+
+```
+Workspace "production" is your active workspace.
+
+You cannot delete the currently active workspace. Please switch
+to another workspace and try again.
+```
+
+Example:
+```bash
+terraform workspace select default
+terraform workspace delete production
+```
+
+### Cannot Delete Default Workspace
+
+The `default` workspace cannot be deleted:
+
+```
+Cannot delete the default workspace
+```
+
+### Non-Existent Workspace
+
+If you attempt to delete a workspace that doesn't exist, the command will fail:
+
+```
+Workspace "staging" doesn't exist.
+
+You can create this workspace with the "new" subcommand
+or include the "-or-create" flag with the "select" subcommand.
+```
+
+### Empty String Name
+
+You cannot delete a workspace with an empty string as the name:
+
+```
+Expected a workspace name as an argument, instead got an empty string: ""
+```
+
+## Best Practices
+
+1. **Destroy resources first**: Always run `terraform destroy` before deleting a workspace to properly clean up infrastructure.
+
+   ```bash
+   terraform workspace select staging
+   terraform destroy
+   terraform workspace select default
+   terraform workspace delete staging
+   ```
+
+2. **Verify workspace contents**: Use `terraform state list` to check what resources are managed before deletion.
+
+3. **Avoid `-force` in automation**: The `-force` flag should only be used when you're certain about the consequences.
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error (e.g., workspace doesn't exist, workspace is current, workspace contains resources, workspace is default, failed to load backend)
+
+## Related Commands
+
+- [terraform workspace list](/cli/workspace-list) - List all workspaces
+- [terraform workspace select](/cli/workspace-select) - Switch to a different workspace
+- [terraform workspace show](/cli/workspace-show) - Show the current workspace name
+- [terraform workspace new](/cli/workspace-new) - Create a new workspace
+- [terraform destroy](/cli/destroy) - Destroy infrastructure before deleting a workspace

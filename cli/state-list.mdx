@@ -1,0 +1,121 @@
+---
+title: terraform state list
+description: List resources in the Terraform state.
+---
+
+The `terraform state list` command lists resource instances in the Terraform state.
+
+## Synopsis
+
+List resources in the state.
+
+## Usage
+
+```bash
+terraform state list [options] [address...]
+```
+
+This command lists resource instances in the Terraform state. The address argument can be used to filter the instances by resource or module. If no pattern is given, all resource instances are listed.
+
+The addresses must either be module addresses or absolute resource addresses, such as:
+- `aws_instance.example`
+- `module.example`
+- `module.example.module.child`
+- `module.example.aws_instance.example`
+
+An error will be returned if any of the resources or modules given as filter addresses do not exist in the state.
+
+## Options
+
+<ParamField path="-state" type="string">
+  Path to a Terraform state file to use to look up Terraform-managed resources. By default, Terraform will consult the state of the currently-selected workspace.
+</ParamField>
+
+<ParamField path="-id" type="string">
+  Filters the results to include only instances whose resource types have an attribute named "id" whose value equals the given id string.
+</ParamField>
+
+## Examples
+
+### List all resources
+
+List all resources in the current state:
+
+```bash
+terraform state list
+```
+
+Example output:
+```
+aws_instance.web
+aws_instance.db[0]
+aws_instance.db[1]
+aws_security_group.web
+module.vpc.aws_vpc.main
+```
+
+### Filter by resource type
+
+List all instances of a specific resource:
+
+```bash
+terraform state list aws_instance.web
+```
+
+Example output:
+```
+aws_instance.web
+```
+
+### Filter by module
+
+List all resources in a module:
+
+```bash
+terraform state list module.vpc
+```
+
+Example output:
+```
+module.vpc.aws_vpc.main
+module.vpc.aws_subnet.public
+module.vpc.aws_subnet.private
+```
+
+### Filter by ID
+
+List resources with a specific ID value:
+
+```bash
+terraform state list -id=i-1234567890abcdef0
+```
+
+### Use custom state file
+
+List resources from a specific state file:
+
+```bash
+terraform state list -state=path/to/terraform.tfstate
+```
+
+## Common Use Cases
+
+### Inventory resources
+
+Use `state list` to get an inventory of all resources managed by Terraform in your workspace.
+
+### Identify resources for removal
+
+Before removing resources with `terraform state rm`, use `state list` to identify the correct resource addresses.
+
+### Verify resource addresses
+
+When moving or manipulating state, use `state list` to verify that resource addresses match your expectations.
+
+### Filter resources by pattern
+
+Combine with shell tools to filter resources:
+
+```bash
+terraform state list | grep aws_instance
+```

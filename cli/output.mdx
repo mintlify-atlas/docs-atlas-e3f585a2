@@ -1,0 +1,99 @@
+---
+title: terraform output
+description: The terraform output command extracts the value of an output variable from the state file.
+---
+
+# Command: output
+
+The `terraform output` command is used to extract the value of an [output variable](/terraform/language/values/outputs) from the state file.
+
+## Usage
+
+```bash
+terraform output [options] [NAME]
+```
+
+With no additional arguments, `output` will display all the outputs for the root module. If `NAME` is specified, only the value of the output specified will be returned.
+
+## Options
+
+- `-state=path` - Path to the state file to read. Defaults to `"terraform.tfstate"`. **Legacy option for the local backend only.** See the [local backend documentation](/terraform/language/settings/backends/local) for more information.
+
+- `-no-color` - If specified, output won't contain any color.
+
+- `-json` - If specified, machine readable output will be printed in JSON format.
+
+- `-raw` - For value types that can be automatically converted to a string, will print the raw string directly, rather than a human-oriented representation of the value.
+
+## Examples
+
+These examples assume the following Terraform output values:
+
+```hcl
+output "instance_ips" {
+  value = aws_instance.web[*].public_ip
+}
+
+output "lb_address" {
+  value = aws_lb.web.public_dns
+}
+
+output "password" {
+  sensitive = true
+  value     = random_password.password.result
+}
+```
+
+To list all outputs:
+
+```bash
+$ terraform output
+instance_ips = [
+  "54.43.114.12",
+  "52.122.13.4",
+  "52.4.116.53"
+]
+lb_address = "my-app-alb-1657023003.us-east-1.elb.amazonaws.com"
+password = <sensitive>
+```
+
+Note that outputs with the `sensitive` attribute will be redacted.
+
+To query a specific output:
+
+```bash
+$ terraform output lb_address
+"my-app-alb-1657023003.us-east-1.elb.amazonaws.com"
+```
+
+To get the raw string value of an output (without quotes):
+
+```bash
+$ terraform output -raw lb_address
+my-app-alb-1657023003.us-east-1.elb.amazonaws.com
+```
+
+To get JSON output:
+
+```bash
+$ terraform output -json
+{
+  "instance_ips": {
+    "sensitive": false,
+    "type": ["tuple", ["string", "string", "string"]],
+    "value": ["54.43.114.12", "52.122.13.4", "52.4.116.53"]
+  },
+  "lb_address": {
+    "sensitive": false,
+    "type": "string",
+    "value": "my-app-alb-1657023003.us-east-1.elb.amazonaws.com"
+  },
+  "password": {
+    "sensitive": true,
+    "type": "string",
+    "value": "QUp4Hhh3FUG97ztu"
+  }
+}
+```
+
+Note that when using `-json`, sensitive values are displayed.

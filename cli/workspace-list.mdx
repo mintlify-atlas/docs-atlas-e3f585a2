@@ -1,0 +1,56 @@
+---
+title: terraform workspace list
+description: The terraform workspace list command lists all existing workspaces.
+---
+
+# terraform workspace list
+
+The `terraform workspace list` command lists all existing workspaces.
+
+## Usage
+
+```bash
+terraform [global options] workspace list
+```
+
+## Description
+
+This command displays all available workspaces in your Terraform configuration. The currently selected workspace is marked with an asterisk (`*`).
+
+The command reads workspace information from the backend configuration and does not write any state changes.
+
+## Example Output
+
+```
+  default
+* development
+  production
+  staging
+```
+
+In this example, the `development` workspace is currently selected.
+
+## Options
+
+This command accepts no command-specific options. Only [global options](/cli/commands) are available.
+
+## Workspace Override Behavior
+
+If the `TF_WORKSPACE` environment variable is set, the command will display a note indicating that the active workspace is being overridden:
+
+```
+The active workspace is being overridden using the TF_WORKSPACE environment
+variable.
+```
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error (e.g., failed to load backend, failed to list workspaces)
+
+## Related Commands
+
+- [terraform workspace select](/cli/workspace-select) - Switch to a different workspace
+- [terraform workspace new](/cli/workspace-new) - Create a new workspace
+- [terraform workspace show](/cli/workspace-show) - Show the current workspace name
+- [terraform workspace delete](/cli/workspace-delete) - Delete a workspace

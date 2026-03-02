@@ -1,0 +1,236 @@
+---
+title: terraform state replace-provider
+description: Replace provider in the Terraform state.
+---
+
+The `terraform state replace-provider` command replaces the provider for resources in the Terraform state. This is useful when a provider is forked or changes its fully-qualified name.
+
+## Synopsis
+
+Replace provider in the state.
+
+## Usage
+
+```bash
+terraform state replace-provider [options] FROM_PROVIDER_FQN TO_PROVIDER_FQN
+```
+
+This command replaces the provider associated with existing resources. This is only likely to be useful if a provider is forked or changes its fully-qualified name.
+
+## Options
+
+<ParamField path="-auto-approve" type="boolean">
+  Skip interactive approval.
+</ParamField>
+
+<ParamField path="-lock" type="boolean" default="true">
+  Don't hold a state lock during the operation. This is dangerous if others might concurrently run commands against the same workspace.
+</ParamField>
+
+<ParamField path="-lock-timeout" type="duration" default="0s">
+  Duration to retry a state lock.
+</ParamField>
+
+<ParamField path="-ignore-remote-version" type="boolean">
+  A rare option used for the remote backend only. See the remote backend documentation for more information.
+</ParamField>
+
+<ParamField path="-state" type="string">
+  Path to the state file. Legacy option supported for the local backend only.
+</ParamField>
+
+<ParamField path="-backup" type="string" default="-">
+  Path where Terraform should write the backup state. Legacy option supported for the local backend only.
+</ParamField>
+
+## Arguments
+
+<ParamField path="FROM_PROVIDER_FQN" type="string" required>
+  The fully-qualified provider name to replace. Format: `registry.terraform.io/namespace/provider`
+</ParamField>
+
+<ParamField path="TO_PROVIDER_FQN" type="string" required>
+  The new fully-qualified provider name. Format: `registry.terraform.io/namespace/provider`
+</ParamField>
+
+## Examples
+
+### Replace provider after fork
+
+Replace a provider that has been forked to a new namespace:
+
+```bash
+terraform state replace-provider registry.terraform.io/hashicorp/aws registry.terraform.io/mycorp/aws
+```
+
+Example output:
+```
+Terraform will perform the following actions:
+
+  ~ Updating provider:
+    - registry.terraform.io/hashicorp/aws
+    + registry.terraform.io/mycorp/aws
+
+Changing 5 resources:
+
+  aws_instance.web
+  aws_security_group.web
+  aws_subnet.public
+  aws_vpc.main
+  module.rds.aws_db_instance.main
+
+Do you want to make these changes?
+Only 'yes' will be accepted to continue.
+
+Enter a value: yes
+
+Successfully replaced provider for 5 resources.
+```
+
+### Auto-approve the replacement
+
+Skip the interactive confirmation:
+
+```bash
+terraform state replace-provider \
+  -auto-approve \
+  registry.terraform.io/hashicorp/kubernetes \
+  registry.terraform.io/hashicorp/kubernetes
+```
+
+### Replace with custom registry
+
+Replace a provider with one from a custom registry:
+
+```bash
+terraform state replace-provider \
+  registry.terraform.io/hashicorp/null \
+  registry.example.com/custom/null
+```
+
+### Replace provider shorthand
+
+Replace using provider shorthand (hashicorp namespace is implied):
+
+```bash
+terraform state replace-provider \
+  hashicorp/azurerm \
+  registry.terraform.io/hashicorp/azurerm
+```
+
+## Common Use Cases
+
+### Provider fork migration
+
+When a community provider is forked from the official HashiCorp provider:
+
+```bash
+terraform state replace-provider \
+  registry.terraform.io/hashicorp/template \
+  registry.terraform.io/community/template
+```
+
+### Provider namespace change
+
+When a provider moves to a different namespace:
+
+```bash
+terraform state replace-provider \
+  registry.terraform.io/terraform-providers/aws \
+  registry.terraform.io/hashicorp/aws
+```
+
+### Custom provider registry
+
+When migrating from public registry to a private/custom registry:
+
+```bash
+terraform state replace-provider \
+  registry.terraform.io/hashicorp/aws \
+  terraform.example.com/custom/aws
+```
+
+### Legacy provider migration
+
+Migrating from legacy provider addresses to fully-qualified names:
+
+```bash
+terraform state replace-provider \
+  -auto-approve \
+  hashicorp/aws \
+  registry.terraform.io/hashicorp/aws
+```
+
+## Workflow
+
+Typical workflow for replacing a provider:
+
+1. **Update required_providers block** in your Terraform configuration:
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "registry.terraform.io/mycorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+```
+
+2. **Run terraform init** to download the new provider:
+
+```bash
+terraform init -upgrade
+```
+
+3. **Replace the provider in state**:
+
+```bash
+terraform state replace-provider \
+  registry.terraform.io/hashicorp/aws \
+  registry.terraform.io/mycorp/aws
+```
+
+4. **Verify the changes**:
+
+```bash
+terraform plan
+```
+
+The plan should show no changes if the providers are compatible.
+
+## Important Notes
+
+- This command only updates the provider reference in the state file
+- It does **not** modify your Terraform configuration files
+- You must manually update the `required_providers` block in your configuration
+- The old and new providers must be compatible (same resource schemas)
+- If providers are incompatible, you may see errors during `terraform plan`
+- A backup of the state is automatically created before changes
+- All resources using the old provider will be updated to use the new provider
+
+## Interactive Approval
+
+By default, the command shows:
+1. The provider change (from → to)
+2. A list of all affected resources
+3. A confirmation prompt
+
+You must type exactly `yes` to proceed. Any other input cancels the operation.
+
+Use `-auto-approve` to skip this prompt (useful in automation).
+
+## Provider Compatibility
+
+Before replacing a provider, ensure:
+- The new provider has the same resource types
+- Resource schemas are compatible
+- The provider API is compatible
+
+Incompatible providers may cause:
+- Errors during `terraform plan`
+- Unexpected infrastructure changes
+- Resource recreation
+
+Test in a non-production environment first.

@@ -1,0 +1,1150 @@
+---
+title: Built-in Functions
+description: Reference for Terraform's built-in functions for data transformation and computation.
+---
+
+# Built-in Functions
+
+Terraform includes many built-in functions that you can call from expressions to transform and combine values. This page provides a complete reference of all available functions.
+
+## Function Syntax
+
+Functions are called with the syntax `function_name(arg1, arg2, ...)`:
+
+```hcl
+# String functions
+upper("hello")                    # "HELLO"
+join(", ", ["a", "b", "c"])      # "a, b, c"
+
+# Numeric functions
+max(5, 12, 9)                    # 12
+ceil(3.7)                        # 4
+
+# Collection functions
+length(["a", "b", "c"])          # 3
+merge(map1, map2)                # Combined map
+```
+
+## Function Categories
+
+<CardGroup cols={3}>
+  <Card title="Numeric" icon="calculator">
+    Mathematical operations and number manipulation
+  </Card>
+  
+  <Card title="String" icon="font">
+    String manipulation and formatting
+  </Card>
+  
+  <Card title="Collection" icon="list">
+    List, map, and set operations
+  </Card>
+  
+  <Card title="Encoding" icon="code">
+    Encode and decode data formats
+  </Card>
+  
+  <Card title="Filesystem" icon="folder">
+    Read files and check existence
+  </Card>
+  
+  <Card title="Date/Time" icon="clock">
+    Timestamp manipulation
+  </Card>
+  
+  <Card title="Hash/Crypto" icon="lock">
+    Hashing and cryptographic operations
+  </Card>
+  
+  <Card title="IP Network" icon="network-wired">
+    CIDR and network calculations
+  </Card>
+  
+  <Card title="Type Conversion" icon="arrows-rotate">
+    Convert between types
+  </Card>
+</CardGroup>
+
+## Numeric Functions
+
+### abs
+
+Returns the absolute value of a number.
+
+```hcl
+abs(-5)   # 5
+abs(5)    # 5
+abs(-3.7) # 3.7
+```
+
+### ceil
+
+Returns the closest whole number greater than or equal to the given value.
+
+```hcl
+ceil(3.1)  # 4
+ceil(3.9)  # 4
+ceil(-1.1) # -1
+```
+
+### floor
+
+Returns the closest whole number less than or equal to the given value.
+
+```hcl
+floor(3.9)  # 3
+floor(3.1)  # 3
+floor(-1.1) # -2
+```
+
+### log
+
+Returns the logarithm of a number in a given base.
+
+```hcl
+log(16, 2)   # 4
+log(100, 10) # 2
+```
+
+### max
+
+Returns the maximum value from the given numbers.
+
+```hcl
+max(5, 12, 9)           # 12
+max([5, 12, 9]...)      # 12 (using expansion)
+```
+
+### min
+
+Returns the minimum value from the given numbers.
+
+```hcl
+min(5, 12, 9)           # 5
+min([5, 12, 9]...)      # 5
+```
+
+### parseint
+
+Parses a string as an integer in a given base.
+
+```hcl
+parseint("100", 10)   # 100
+parseint("FF", 16)    # 255
+parseint("1010", 2)   # 10
+```
+
+### pow
+
+Calculates an exponent.
+
+```hcl
+pow(2, 3)    # 8
+pow(10, 2)   # 100
+```
+
+### signum
+
+Returns the sign of a number (-1, 0, or 1).
+
+```hcl
+signum(-5)   # -1
+signum(0)    # 0
+signum(5)    # 1
+```
+
+### sum
+
+Returns the sum of all numbers in a list.
+
+```hcl
+sum([1, 2, 3, 4])  # 10
+```
+
+## String Functions
+
+### chomp
+
+Removes newline characters at the end of a string.
+
+```hcl
+chomp("hello\\n")     # "hello"
+chomp("hello\\n\\n")  # "hello"
+```
+
+### endswith
+
+Checks if a string ends with a specific suffix.
+
+```hcl
+endswith("hello world", "world")  # true
+endswith("hello world", "hello")  # false
+```
+
+### format
+
+Formats a string according to a specification.
+
+```hcl
+format("Hello, %s!", "World")              # "Hello, World!"
+format("%d items", 42)                     # "42 items"
+format("%.2f", 3.14159)                    # "3.14"
+```
+
+### formatlist
+
+Formats multiple strings according to a specification.
+
+```hcl
+formatlist("instance-%s", ["a", "b", "c"])
+# ["instance-a", "instance-b", "instance-c"]
+```
+
+### indent
+
+Adds spaces to the beginning of all but the first line.
+
+```hcl
+indent(2, "line1\\nline2\\nline3")
+# "line1\\n  line2\\n  line3"
+```
+
+### join
+
+Concatenates list elements with a delimiter.
+
+```hcl
+join(", ", ["foo", "bar", "baz"])  # "foo, bar, baz"
+join("-", ["2024", "01", "15"])    # "2024-01-15"
+```
+
+### lower
+
+Converts all letters to lowercase.
+
+```hcl
+lower("HELLO WORLD")  # "hello world"
+lower("Hello")        # "hello"
+```
+
+### upper
+
+Converts all letters to uppercase.
+
+```hcl
+upper("hello world")  # "HELLO WORLD"
+upper("Hello")        # "HELLO"
+```
+
+### replace
+
+Replaces occurrences of a substring or regex pattern.
+
+```hcl
+replace("hello world", "world", "terraform")  # "hello terraform"
+replace("hello", "/l+/", "L")                 # "heLo" (regex)
+```
+
+### split
+
+Splits a string into a list using a delimiter.
+
+```hcl
+split(",", "foo,bar,baz")     # ["foo", "bar", "baz"]
+split("-", "2024-01-15")      # ["2024", "01", "15"]
+```
+
+### startswith
+
+Checks if a string starts with a specific prefix.
+
+```hcl
+startswith("hello world", "hello")  # true
+startswith("hello world", "world")  # false
+```
+
+### strcontains
+
+Checks if a string contains a substring.
+
+```hcl
+strcontains("hello world", "world")  # true
+strcontains("hello world", "foo")    # false
+```
+
+### strrev
+
+Reverses a string.
+
+```hcl
+strrev("hello")  # "olleh"
+```
+
+### substr
+
+Extracts a substring.
+
+```hcl
+substr("hello world", 0, 5)   # "hello"
+substr("hello world", 6, 5)   # "world"
+```
+
+### title
+
+Converts the first letter of each word to uppercase.
+
+```hcl
+title("hello world")  # "Hello World"
+```
+
+### trim
+
+Removes specified characters from both ends of a string.
+
+```hcl
+trim("  hello  ", " ")    # "hello"
+trim("??hello??", "?")    # "hello"
+```
+
+### trimprefix
+
+Removes a prefix from a string.
+
+```hcl
+trimprefix("helloworld", "hello")  # "world"
+```
+
+### trimspace
+
+Removes whitespace from both ends.
+
+```hcl
+trimspace("  hello world  ")  # "hello world"
+```
+
+### trimsuffix
+
+Removes a suffix from a string.
+
+```hcl
+trimsuffix("helloworld", "world")  # "hello"
+```
+
+## Collection Functions
+
+### alltrue
+
+Returns true if all elements in a list are true.
+
+```hcl
+alltrue([true, true, true])   # true
+alltrue([true, false, true])  # false
+alltrue([])                   # true (empty list)
+```
+
+### anytrue
+
+Returns true if any element in a list is true.
+
+```hcl
+anytrue([true, false, false])  # true
+anytrue([false, false, false]) # false
+anytrue([])                    # false
+```
+
+### chunklist
+
+Splits a list into fixed-size chunks.
+
+```hcl
+chunklist(["a", "b", "c", "d", "e"], 2)
+# [["a", "b"], ["c", "d"], ["e"]]
+```
+
+### coalesce
+
+Returns the first non-null, non-empty value.
+
+```hcl
+coalesce("", "hello", "world")      # "hello"
+coalesce(null, "", "value")         # "value"
+```
+
+### coalescelist
+
+Returns the first non-empty list.
+
+```hcl
+coalescelist([], ["a", "b"], ["c"])  # ["a", "b"]
+```
+
+### compact
+
+Removes empty strings from a list.
+
+```hcl
+compact(["a", "", "b", "", "c"])  # ["a", "b", "c"]
+```
+
+### concat
+
+Combines multiple lists into one.
+
+```hcl
+concat(["a", "b"], ["c", "d"])  # ["a", "b", "c", "d"]
+```
+
+### contains
+
+Checks if a list contains a value.
+
+```hcl
+contains(["a", "b", "c"], "b")  # true
+contains(["a", "b", "c"], "d")  # false
+```
+
+### distinct
+
+Removes duplicate elements from a list.
+
+```hcl
+distinct(["a", "b", "a", "c", "b"])  # ["a", "b", "c"]
+```
+
+### element
+
+Retrieves an element from a list by index.
+
+```hcl
+element(["a", "b", "c"], 1)   # "b"
+element(["a", "b", "c"], -1)  # "c" (negative index)
+```
+
+### flatten
+
+Flattens nested lists.
+
+```hcl
+flatten([["a", "b"], ["c", "d"]])     # ["a", "b", "c", "d"]
+flatten([["a"], "b", [["c"]]])        # ["a", "b", "c"]
+```
+
+### index
+
+Finds the index of a value in a list.
+
+```hcl
+index(["a", "b", "c"], "b")  # 1
+```
+
+### keys
+
+Returns a list of map keys.
+
+```hcl
+keys({name = "value", age = 30})  # ["age", "name"] (sorted)
+```
+
+### length
+
+Returns the length of a string, list, or map.
+
+```hcl
+length("hello")              # 5
+length(["a", "b", "c"])      # 3
+length({a = 1, b = 2})       # 2
+```
+
+### lookup
+
+Retrieves a value from a map with a default fallback.
+
+```hcl
+lookup({a = "ay", b = "bee"}, "a", "default")  # "ay"
+lookup({a = "ay", b = "bee"}, "c", "default")  # "default"
+```
+
+### matchkeys
+
+Filters one list based on values in another.
+
+```hcl
+matchkeys(
+  ["a", "b", "c"],
+  ["one", "two", "three"],
+  ["one", "three"]
+)  # ["a", "c"]
+```
+
+### merge
+
+Merges multiple maps into one.
+
+```hcl
+merge({a = 1, b = 2}, {b = 3, c = 4})  # {a = 1, b = 3, c = 4}
+```
+
+### one
+
+Returns the single element from a list, or null if empty.
+
+```hcl
+one(["hello"])    # "hello"
+one([])           # null
+```
+
+### range
+
+Generates a list of numbers.
+
+```hcl
+range(3)         # [0, 1, 2]
+range(1, 4)      # [1, 2, 3]
+range(0, 10, 2)  # [0, 2, 4, 6, 8]
+```
+
+### reverse
+
+Reverses a list.
+
+```hcl
+reverse(["a", "b", "c"])  # ["c", "b", "a"]
+```
+
+### setintersection
+
+Returns the intersection of sets.
+
+```hcl
+setintersection(["a", "b"], ["b", "c"])  # ["b"]
+```
+
+### setproduct
+
+Computes the Cartesian product of sets.
+
+```hcl
+setproduct(["a", "b"], [1, 2])
+# [["a", 1], ["a", 2], ["b", 1], ["b", 2]]
+```
+
+### setsubtract
+
+Subtracts one set from another.
+
+```hcl
+setsubtract(["a", "b", "c"], ["b"])  # ["a", "c"]
+```
+
+### setunion
+
+Returns the union of sets.
+
+```hcl
+setunion(["a", "b"], ["b", "c"])  # ["a", "b", "c"]
+```
+
+### slice
+
+Extracts a portion of a list.
+
+```hcl
+slice(["a", "b", "c", "d"], 1, 3)  # ["b", "c"]
+```
+
+### sort
+
+Sorts a list of strings.
+
+```hcl
+sort(["c", "a", "b"])  # ["a", "b", "c"]
+```
+
+### transpose
+
+Transposes a map of lists.
+
+```hcl
+transpose({a = ["1", "2"], b = ["3", "4"]})
+# {"1" = ["a"], "2" = ["a"], "3" = ["b"], "4" = ["b"]}
+```
+
+### values
+
+Returns a list of map values.
+
+```hcl
+values({a = 1, b = 2, c = 3})  # [1, 2, 3]
+```
+
+### zipmap
+
+Constructs a map from lists of keys and values.
+
+```hcl
+zipmap(["a", "b"], [1, 2])  # {a = 1, b = 2}
+```
+
+## Encoding Functions
+
+### base64decode
+
+Decodes a Base64-encoded string.
+
+```hcl
+base64decode("SGVsbG8gV29ybGQ=")  # "Hello World"
+```
+
+### base64encode
+
+Encodes a string to Base64.
+
+```hcl
+base64encode("Hello World")  # "SGVsbG8gV29ybGQ="
+```
+
+### base64gzip
+
+Compresses and Base64-encodes a string.
+
+```hcl
+base64gzip("Hello World")  # Base64-encoded gzipped string
+```
+
+### csvdecode
+
+Decodes CSV data into a list of maps.
+
+```hcl
+csvdecode("a,b,c\\n1,2,3\\n4,5,6")
+# [{a = "1", b = "2", c = "3"}, {a = "4", b = "5", c = "6"}]
+```
+
+### jsondecode
+
+Parses a JSON string.
+
+```hcl
+jsondecode("{\"name\": \"value\"}")  # {name = "value"}
+```
+
+### jsonencode
+
+Encodes a value as JSON.
+
+```hcl
+jsonencode({name = "value"})  # "{\"name\":\"value\"}"
+```
+
+### textdecodebase64
+
+Decodes Base64-encoded text with charset detection.
+
+```hcl
+textdecodebase64("SGVsbG8=", "UTF-8")  # "Hello"
+```
+
+### textencodebase64
+
+Encodes text to Base64 with specified charset.
+
+```hcl
+textencodebase64("Hello", "UTF-8")  # "SGVsbG8="
+```
+
+### urlencode
+
+URL-encodes a string.
+
+```hcl
+urlencode("Hello World!")  # "Hello+World%21"
+```
+
+### yamldecode
+
+Parses a YAML string.
+
+```hcl
+yamldecode("name: value\\nage: 30")  # {name = "value", age = 30}
+```
+
+### yamlencode
+
+Encodes a value as YAML.
+
+```hcl
+yamlencode({name = "value"})  # "name: value\\n"
+```
+
+## Filesystem Functions
+
+### abspath
+
+Converts a relative path to absolute.
+
+```hcl
+abspath("./modules/vpc")  # Full absolute path
+```
+
+### basename
+
+Returns the last element of a path.
+
+```hcl
+basename("/path/to/file.txt")  # "file.txt"
+```
+
+### dirname
+
+Returns the directory portion of a path.
+
+```hcl
+dirname("/path/to/file.txt")  # "/path/to"
+```
+
+### file
+
+Reads a file's contents as a string.
+
+```hcl
+file("${path.module}/config.json")
+```
+
+<Warning>
+Path is relative to the current working directory. Use `path.module` for module-relative paths.
+</Warning>
+
+### filebase64
+
+Reads a file and returns Base64-encoded contents.
+
+```hcl
+filebase64("${path.module}/image.png")
+```
+
+### fileexists
+
+Checks if a file exists.
+
+```hcl
+fileexists("${path.module}/optional.txt")  # true or false
+```
+
+### fileset
+
+Lists files matching a pattern.
+
+```hcl
+fileset(path.module, "*.tf")        # All .tf files
+fileset(path.module, "**/*.json")   # All JSON files recursively
+```
+
+### pathexpand
+
+Expands ~ to the home directory.
+
+```hcl
+pathexpand("~/.ssh/id_rsa")  # "/home/user/.ssh/id_rsa"
+```
+
+### templatefile
+
+Renders a template file.
+
+```hcl
+templatefile("${path.module}/user-data.sh", {
+  name     = var.instance_name
+  region   = var.region
+  packages = var.packages
+})
+```
+
+## Hash and Crypto Functions
+
+### base64sha256
+
+Computes SHA256 hash and encodes as Base64.
+
+```hcl
+base64sha256("hello world")
+```
+
+### base64sha512
+
+Computes SHA512 hash and encodes as Base64.
+
+```hcl
+base64sha512("hello world")
+```
+
+### bcrypt
+
+Hashes a string using bcrypt.
+
+```hcl
+bcrypt("password")       # Default cost
+bcrypt("password", 10)   # Specific cost
+```
+
+### filebase64sha256
+
+Computes Base64-encoded SHA256 of a file.
+
+```hcl
+filebase64sha256("${path.module}/file.txt")
+```
+
+### filebase64sha512
+
+Computes Base64-encoded SHA512 of a file.
+
+```hcl
+filebase64sha512("${path.module}/file.txt")
+```
+
+### filemd5
+
+Computes MD5 hash of a file.
+
+```hcl
+filemd5("${path.module}/file.txt")
+```
+
+### filesha1
+
+Computes SHA1 hash of a file.
+
+```hcl
+filesha1("${path.module}/file.txt")
+```
+
+### filesha256
+
+Computes SHA256 hash of a file.
+
+```hcl
+filesha256("${path.module}/file.txt")
+```
+
+### filesha512
+
+Computes SHA512 hash of a file.
+
+```hcl
+filesha512("${path.module}/file.txt")
+```
+
+### md5
+
+Computes MD5 hash of a string.
+
+```hcl
+md5("hello world")
+```
+
+### rsadecrypt
+
+Decrypts a string encrypted with RSA.
+
+```hcl
+rsadecrypt(encrypted_string, private_key)
+```
+
+### sha1
+
+Computes SHA1 hash of a string.
+
+```hcl
+sha1("hello world")
+```
+
+### sha256
+
+Computes SHA256 hash of a string.
+
+```hcl
+sha256("hello world")
+```
+
+### sha512
+
+Computes SHA512 hash of a string.
+
+```hcl
+sha512("hello world")
+```
+
+### uuid
+
+Generates a random UUID.
+
+```hcl
+uuid()  # "550e8400-e29b-41d4-a716-446655440000"
+```
+
+<Note>
+UUID is regenerated on every run. Use it carefully to avoid unnecessary changes.
+</Note>
+
+### uuidv5
+
+Generates a name-based UUID.
+
+```hcl
+uuidv5("dns", "www.example.com")
+```
+
+## Date and Time Functions
+
+### formatdate
+
+Formats a timestamp.
+
+```hcl
+formatdate("YYYY-MM-DD", timestamp())      # "2024-01-15"
+formatdate("DD MMM YYYY hh:mm:ss", "...")  # "15 Jan 2024 10:30:00"
+```
+
+### plantimestamp
+
+Returns the timestamp when the plan was created.
+
+```hcl
+plantimestamp()
+```
+
+### timeadd
+
+Adds a duration to a timestamp.
+
+```hcl
+timeadd(timestamp(), "24h")   # 24 hours from now
+timeadd(timestamp(), "-1h")   # 1 hour ago
+```
+
+### timecmp
+
+Compares two timestamps.
+
+```hcl
+timecmp("2024-01-15T10:00:00Z", "2024-01-15T11:00:00Z")  # -1
+```
+
+### timestamp
+
+Returns the current timestamp.
+
+```hcl
+timestamp()  # "2024-01-15T10:30:00Z"
+```
+
+## IP Network Functions
+
+### cidrhost
+
+Calculates a host IP within a CIDR block.
+
+```hcl
+cidrhost("10.0.0.0/16", 5)  # "10.0.0.5"
+cidrhost("10.0.0.0/24", 1)  # "10.0.0.1"
+```
+
+### cidrnetmask
+
+Converts a CIDR to a netmask.
+
+```hcl
+cidrnetmask("10.0.0.0/16")  # "255.255.0.0"
+cidrnetmask("10.0.0.0/24")  # "255.255.255.0"
+```
+
+### cidrsubnet
+
+Calculates a subnet within a CIDR block.
+
+```hcl
+cidrsubnet("10.0.0.0/16", 8, 1)  # "10.0.1.0/24"
+cidrsubnet("10.0.0.0/16", 8, 2)  # "10.0.2.0/24"
+```
+
+### cidrsubnets
+
+Calculates multiple subnets.
+
+```hcl
+cidrsubnets("10.0.0.0/16", 4, 4, 8, 4)
+# ["10.0.0.0/20", "10.0.16.0/20", "10.0.32.0/24", "10.0.48.0/20"]
+```
+
+## Type Conversion Functions
+
+### can
+
+Evaluates an expression and returns true if it succeeds.
+
+```hcl
+can(regex("^[a-z]+$", var.name))           # true or false
+can(var.optional_attribute.nested_value)   # true or false
+```
+
+### convert
+
+Converts a value to a specific type.
+
+```hcl
+convert("123", number)      # 123
+convert(["a", "b"], set(string))  # Set of strings
+```
+
+### tobool
+
+Converts to boolean.
+
+```hcl
+tobool("true")   # true
+tobool("false")  # false
+```
+
+### tolist
+
+Converts to list.
+
+```hcl
+tolist(["a", "b", "c"])  # List
+```
+
+### tomap
+
+Converts to map.
+
+```hcl
+tomap({key = "value"})  # Map
+```
+
+### tonumber
+
+Converts to number.
+
+```hcl
+tonumber("42")    # 42
+tonumber("3.14")  # 3.14
+```
+
+### toset
+
+Converts to set (removes duplicates).
+
+```hcl
+toset(["a", "b", "a"])  # Set with "a" and "b"
+```
+
+### tostring
+
+Converts to string.
+
+```hcl
+tostring(123)    # "123"
+tostring(true)   # "true"
+```
+
+### try
+
+Tries multiple expressions and returns the first that succeeds.
+
+```hcl
+try(var.optional_value, "default")
+try(var.a, var.b, var.c, "fallback")
+```
+
+## Special Functions
+
+### sensitive
+
+Marks a value as sensitive.
+
+```hcl
+sensitive(var.password)  # Hides from output
+```
+
+### nonsensitive
+
+Removes sensitive marking.
+
+```hcl
+nonsensitive(sensitive(var.value))
+```
+
+<Warning>
+Use with caution. Only use when you're certain the value is not sensitive.
+</Warning>
+
+### issensitive
+
+Checks if a value is marked as sensitive.
+
+```hcl
+issensitive(var.password)  # true or false
+```
+
+### type (Console Only)
+
+Returns the type of a value.
+
+```hcl
+type("hello")         # string
+type(123)            # number
+type([1, 2, 3])      # tuple
+```
+
+<Note>
+The `type` function is only available in `terraform console`, not in configurations.
+</Note>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Descriptive Names" icon="tag">
+    Assign function results to descriptive local values for readability.
+  </Card>
+  
+  <Card title="Handle Errors" icon="shield-exclamation">
+    Use `try` and `can` to handle potential errors gracefully.
+  </Card>
+  
+  <Card title="Cache Results" icon="database">
+    Store expensive function results in locals to avoid recomputation.
+  </Card>
+  
+  <Card title="Test in Console" icon="terminal">
+    Use `terraform console` to test function behavior interactively.
+  </Card>
+</CardGroup>
+
+## Testing Functions
+
+Use `terraform console` to experiment:
+
+```bash
+terraform console
+> upper("hello")
+"HELLO"
+> length(["a", "b", "c"])
+3
+> merge({a = 1}, {b = 2})
+{
+  "a" = 1
+  "b" = 2
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Expressions" href="/language/expressions" icon="function">
+    Use functions in expressions
+  </Card>
+  
+  <Card title="Variables" href="/language/variables" icon="input-text">
+    Combine functions with variables
+  </Card>
+</CardGroup>

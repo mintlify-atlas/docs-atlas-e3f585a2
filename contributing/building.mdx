@@ -1,0 +1,240 @@
+---
+title: Building Terraform from Source
+description: Instructions for building Terraform from source code, including prerequisites, build options, and platform-specific considerations.
+---
+
+## Overview
+
+While pre-built binaries are available from the [HashiCorp Releases website](https://releases.hashicorp.com/terraform/), you can build Terraform yourself using the Go build toolchain.
+
+## Prerequisites
+
+### Required Tools
+
+1. **Go**: Install the Go language version specified in [`.go-version`](https://github.com/hashicorp/terraform/blob/main/.go-version)
+2. **Git**: Version control system for cloning the repository
+
+<Info>
+  As of Go 1.21, the `go` command will automatically install the correct Go toolchain version from `go.mod` if it's newer than your installed version.
+</Info>
+
+### Go Version Details
+
+- **`.go-version`**: The version Terraform is officially built with (production builds)
+- **`go.mod`**: The minimum compatible Go version (currently `go 1.25.7`)
+
+### Platform Support
+
+The Terraform development environment targets **Linux and macOS** systems. While Terraform itself is compatible with Windows, the unit test suite contains Unix-specific assumptions around:
+- Maximum path lengths
+- Path separators
+- Other Unix conventions
+
+## Clone the Repository
+
+Terraform uses Go Modules, so clone it **outside** your `GOPATH`:
+
+```bash
+git clone https://github.com/hashicorp/terraform.git
+cd terraform
+```
+
+## Basic Build
+
+Build Terraform using the standard Go toolchain:
+
+```bash
+go install .
+```
+
+<Note>
+  The first build will download library dependencies to your Go modules cache. Subsequent builds will be faster.
+</Note>
+
+### Locate the Binary
+
+After compilation, find the `terraform` executable in your Go executable directory:
+
+```bash
+go env GOPATH
+```
+
+The binary will be in the `bin` directory inside the returned path, unless you've overridden it with the `GOBIN` environment variable.
+
+## Build Options
+
+Terraform accepts build options via `ldflags` to control binary behavior.
+
+### Disable Dev Version Reporting
+
+By default, Terraform includes a `-dev` flag in version reporting (e.g., `1.5.0-dev`). To disable this:
+
+```bash
+go build -ldflags "-w -s -X 'github.com/hashicorp/terraform/version.dev=no'" -o bin/ .
+```
+
+### Enable Experimental Features
+
+Experimental features are disabled unless explicitly enabled:
+
+```bash
+go build -ldflags "-w -s -X 'main.experimentsAllowed=yes'" -o bin/ .
+```
+
+<Warning>
+  In official builds, experiments are only allowed in alpha releases. Third-party distributors should follow this convention to reduce user confusion.
+</Warning>
+
+### Combined Build Options
+
+To use both options together:
+
+```bash
+go build -ldflags "-w -s -X 'github.com/hashicorp/terraform/version.dev=no' -X 'main.experimentsAllowed=yes'" -o bin/ .
+```
+
+## Platform-Specific Considerations
+
+### CGO_ENABLED Setting
+
+The official Terraform build process sets `CGO_ENABLED` explicitly:
+
+- **Most platforms**: `CGO_ENABLED=0` for statically linked binaries
+- **macOS/Darwin**: `CGO_ENABLED=1` to avoid DNS resolution issues
+
+#### Building for macOS
+
+```bash
+CGO_ENABLED=1 go build -o bin/ .
+```
+
+#### Building for Linux (static binary)
+
+```bash
+CGO_ENABLED=0 go build -o bin/ .
+```
+
+## Verify Your Build
+
+After building, verify the installation:
+
+```bash
+# Check version
+./bin/terraform version
+
+# Run unit tests
+go test ./...
+```
+
+<Note>
+  Running the test suite before making changes ensures everything is initially working correctly.
+</Note>
+
+## Development Workflow
+
+### Quick Rebuild
+
+During development, rebuild quickly with:
+
+```bash
+go install .
+```
+
+### Test Specific Packages
+
+Speed up testing by focusing on packages you're modifying:
+
+```bash
+# Test a specific package
+go test ./internal/addrs
+
+# Test packages under a prefix
+go test ./internal/command/...
+```
+
+### Build for Debugging
+
+Compile with debugging flags for use with Delve debugger:
+
+```bash
+go install -gcflags="all=-N -l"
+```
+
+See [Debugging](/contributing/debugging) for more details.
+
+## Generated Code
+
+Some files are generated and must be regenerated after certain changes.
+
+### Standard Generated Code
+
+Use `go generate` for most generated code:
+
+```bash
+go generate ./...
+```
+
+Inspect changes with:
+
+```bash
+git diff
+```
+
+### Protocol Buffer Stubs
+
+Protocol Buffer definitions require `protoc` (not a Go tool):
+
+```bash
+make protobuf
+```
+
+<Info>
+  You need to install a suitable version of `protoc` separately to regenerate protobuf stubs.
+</Info>
+
+## Build Scripts
+
+The repository includes a build script for advanced scenarios:
+
+```bash
+./scripts/build.sh
+```
+
+## Troubleshooting
+
+### Dependency Issues
+
+If you encounter dependency problems:
+
+```bash
+# Clean module cache
+go clean -modcache
+
+# Reinstall dependencies
+go mod download
+
+# Tidy dependencies
+go mod tidy
+```
+
+### Build Cache Issues
+
+Clear the build cache:
+
+```bash
+go clean -cache
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Running Tests" icon="flask" href="/contributing/testing">
+    Learn how to run and write tests
+  </Card>
+  <Card title="Debugging" icon="bug" href="/contributing/debugging">
+    Set up debugging for Terraform development
+  </Card>
+  <Card title="Code Style" icon="code" href="/contributing/code-style">
+    Follow Terraform's code style requirements
+  </Card>
+</CardGroup>

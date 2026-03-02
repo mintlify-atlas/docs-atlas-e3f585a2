@@ -1,0 +1,154 @@
+---
+title: terraform validate
+description: Validate the Terraform configuration files
+---
+
+## Synopsis
+
+Check whether the configuration is valid
+
+## Description
+
+The `terraform validate` command validates the configuration files in a directory, referring only to the configuration and not accessing any remote services such as remote state, provider APIs, etc.
+
+Validate runs checks that verify whether a configuration is syntactically valid and internally consistent, regardless of any provided variables or existing state. It is thus primarily useful for general verification of reusable modules, including correctness of attribute names and value types.
+
+This command is safe to run automatically, for example as a post-save check in a text editor or as a test step for a reusable module in a CI system.
+
+**Important:** Validation requires an initialized working directory with any referenced plugins and modules installed. To initialize a working directory for validation without accessing any configured remote backend, use:
+
+```bash
+terraform init -backend=false
+```
+
+To verify configuration in the context of a particular run (a particular target workspace, input variable values, etc), use the `terraform plan` command instead, which includes an implied validation check.
+
+## Usage
+
+```bash
+terraform validate [options] [dir]
+```
+
+## Arguments
+
+<ParamField path="dir" type="string" default=".">
+  The directory containing the Terraform configuration to validate. Defaults to the current directory.
+</ParamField>
+
+## Options
+
+<ParamField path="-json" type="boolean" default="false">
+  Produce output in a machine-readable JSON format, suitable for use in text editor integrations and other automated systems. Always disables color.
+</ParamField>
+
+<ParamField path="-no-color" type="boolean" default="false">
+  If specified, output won't contain any color.
+</ParamField>
+
+<ParamField path="-no-tests" type="boolean" default="false">
+  If specified, Terraform will not validate test files.
+</ParamField>
+
+<ParamField path="-test-directory" type="string" default="tests">
+  Set the Terraform test directory, defaults to "tests".
+</ParamField>
+
+<ParamField path="-query" type="boolean" default="false">
+  If specified, the command will also validate .tfquery.hcl files.
+</ParamField>
+
+## Examples
+
+### Basic Validation
+
+Validate configuration in the current directory:
+
+```bash
+$ terraform validate
+Success! The configuration is valid.
+```
+
+### Validation with Errors
+
+Example output when configuration has errors:
+
+```bash
+$ terraform validate
+
+Error: Unsupported block type
+
+  on main.tf line 5, in resource "aws_instance" "example":
+   5:   invalid_block {
+
+Blocks of type "invalid_block" are not expected here.
+```
+
+### JSON Output
+
+Validate with JSON output for tooling integration:
+
+```bash
+$ terraform validate -json
+{
+  "format_version": "1.0",
+  "valid": true,
+  "error_count": 0,
+  "warning_count": 0,
+  "diagnostics": []
+}
+```
+
+Example JSON output with errors:
+
+```bash
+$ terraform validate -json
+{
+  "format_version": "1.0",
+  "valid": false,
+  "error_count": 1,
+  "warning_count": 0,
+  "diagnostics": [
+    {
+      "severity": "error",
+      "summary": "Unsupported block type",
+      "detail": "Blocks of type \"invalid_block\" are not expected here.",
+      "range": {
+        "filename": "main.tf",
+        "start": {
+          "line": 5,
+          "column": 3,
+          "byte": 102
+        },
+        "end": {
+          "line": 5,
+          "column": 17,
+          "byte": 116
+        }
+      }
+    }
+  ]
+}
+```
+
+### Validate Specific Directory
+
+Validate configuration in a specific directory:
+
+```bash
+$ terraform validate ./modules/vpc
+Success! The configuration is valid.
+```
+
+### Exclude Test Files
+
+Validate without checking test files:
+
+```bash
+$ terraform validate -no-tests
+Success! The configuration is valid.
+```
+
+## Exit Codes
+
+- `0` - Success, configuration is valid
+- `1` - Error occurred, configuration is invalid

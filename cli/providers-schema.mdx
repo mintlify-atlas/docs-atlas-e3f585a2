@@ -1,0 +1,381 @@
+---
+title: terraform providers schema
+description: The terraform providers schema command shows schemas for the providers used in the configuration.
+---
+
+# Command: providers schema
+
+The `terraform providers schema` command outputs a JSON representation of the schemas for all providers used in the current configuration.
+
+## Usage
+
+```bash
+terraform providers schema -json
+```
+
+## Description
+
+This command prints out a JSON representation of the schemas for all providers used in the current configuration. The output includes:
+
+- Provider configuration schemas
+- Resource type schemas
+- Data source schemas
+- Provider metadata
+
+The `-json` flag is **required** for this command.
+
+## Options
+
+- `-json` - **(Required)** Produce JSON output. This is the only output format supported.
+
+## Behavior
+
+The command:
+
+1. Loads the configuration from the current working directory
+2. Initializes a local backend
+3. Creates a Terraform context with the configuration and current state
+4. Retrieves schemas from all providers declared in the configuration
+5. Marshals the schemas to JSON format
+6. Outputs the JSON to stdout
+
+### Requirements
+
+- Providers must already be installed (run `terraform init` first)
+- Requires a local backend (cannot be used with certain remote backends)
+- This is a read-only command that does not modify state or configuration
+
+## Output Format
+
+The output is a JSON object with the following structure:
+
+```json
+{
+  "format_version": "1.0",
+  "provider_schemas": {
+    "registry.terraform.io/hashicorp/aws": {
+      "provider": {
+        "version": 0,
+        "block": {
+          "attributes": { ... },
+          "block_types": { ... },
+          "description": "...",
+          "description_kind": "plain"
+        }
+      },
+      "resource_schemas": {
+        "aws_instance": {
+          "version": 1,
+          "block": {
+            "attributes": { ... },
+            "block_types": { ... },
+            "description": "...",
+            "description_kind": "markdown"
+          }
+        }
+      },
+      "data_source_schemas": {
+        "aws_ami": {
+          "version": 0,
+          "block": { ... }
+        }
+      }
+    }
+  }
+}
+```
+
+### Schema Components
+
+#### Provider Schema
+
+Describes the configuration schema for the provider itself:
+
+- `attributes` - Provider configuration arguments
+- `block_types` - Nested configuration blocks
+- `description` - Human-readable description
+- `description_kind` - Format of the description ("plain" or "markdown")
+
+#### Resource Schema
+
+Describes the schema for each resource type:
+
+- `version` - Schema version number
+- `block.attributes` - Resource arguments and their properties
+- `block.block_types` - Nested configuration blocks within the resource
+- `description` - Resource description
+- `description_kind` - Description format
+
+#### Attribute Properties
+
+Each attribute includes:
+
+- `type` - The attribute's data type
+- `description` - Description of the attribute
+- `required` - Whether the attribute is required
+- `optional` - Whether the attribute is optional
+- `computed` - Whether the value is computed by the provider
+- `sensitive` - Whether the attribute contains sensitive data
+
+## Examples
+
+### Basic Usage
+
+Output provider schemas as JSON:
+
+```bash
+terraform providers schema -json
+```
+
+### Save to File
+
+Save the schema output to a file for analysis:
+
+```bash
+terraform providers schema -json > provider-schemas.json
+```
+
+### Pretty Print with jq
+
+Format the JSON output for readability:
+
+```bash
+terraform providers schema -json | jq .
+```
+
+### Extract Specific Provider Schema
+
+Extract the schema for a specific provider:
+
+```bash
+terraform providers schema -json | jq '.provider_schemas["registry.terraform.io/hashicorp/aws"]'
+```
+
+### List All Resource Types
+
+List all available resource types for a provider:
+
+```bash
+terraform providers schema -json | \
+  jq -r '.provider_schemas["registry.terraform.io/hashicorp/aws"].resource_schemas | keys[]'
+```
+
+### Get Resource Schema
+
+Get the complete schema for a specific resource type:
+
+```bash
+terraform providers schema -json | \
+  jq '.provider_schemas["registry.terraform.io/hashicorp/aws"].resource_schemas.aws_instance'
+```
+
+### List Required Attributes
+
+Find all required attributes for a resource:
+
+```bash
+terraform providers schema -json | \
+  jq '.provider_schemas["registry.terraform.io/hashicorp/aws"].resource_schemas.aws_instance.block.attributes | to_entries | map(select(.value.required == true)) | from_entries'
+```
+
+## Use Cases
+
+### Documentation Generation
+
+Generate custom documentation from provider schemas:
+
+```bash
+terraform providers schema -json > schemas.json
+# Process schemas.json to generate HTML/Markdown documentation
+```
+
+### Schema Validation
+
+Validate configuration against provider schemas programmatically:
+
+```python
+import json
+import subprocess
+
+# Get schemas
+result = subprocess.run(
+    ["terraform", "providers", "schema", "-json"],
+    capture_output=True,
+    text=True
+)
+schemas = json.loads(result.stdout)
+
+# Validate configurations against schemas
+# ...
+```
+
+### IDE Integration
+
+Provide schema information to IDEs and editors for autocomplete and validation:
+
+```bash
+# Export schemas for IDE consumption
+terraform providers schema -json > .terraform/schemas.json
+```
+
+### Testing and CI/CD
+
+Validate that resource configurations match expected schemas:
+
+```bash
+#!/bin/bash
+# In a CI pipeline
+terraform init
+terraform providers schema -json | \
+  jq -e '.provider_schemas["registry.terraform.io/hashicorp/aws"].resource_schemas.aws_instance' > /dev/null
+
+if [ $? -eq 0 ]; then
+  echo "AWS provider schema validated"
+else
+  echo "Schema validation failed"
+  exit 1
+fi
+```
+
+### API Discovery
+
+Discover available data sources and their attributes:
+
+```bash
+terraform providers schema -json | \
+  jq '.provider_schemas["registry.terraform.io/hashicorp/aws"].data_source_schemas | keys'
+```
+
+### Migration Planning
+
+Compare schemas between provider versions to plan migrations:
+
+```bash
+# With old provider version
+terraform providers schema -json > schema-old.json
+
+# Upgrade provider version
+terraform init -upgrade
+
+# With new provider version  
+terraform providers schema -json > schema-new.json
+
+# Compare schemas
+diff schema-old.json schema-new.json
+```
+
+## Output Example
+
+Here's a simplified example of the JSON output:
+
+```json
+{
+  "format_version": "1.0",
+  "provider_schemas": {
+    "registry.terraform.io/hashicorp/aws": {
+      "provider": {
+        "version": 0,
+        "block": {
+          "attributes": {
+            "region": {
+              "type": "string",
+              "description": "The region where AWS operations will take place",
+              "description_kind": "plain",
+              "optional": true
+            },
+            "access_key": {
+              "type": "string",
+              "description": "The access key for API operations",
+              "description_kind": "plain",
+              "optional": true,
+              "sensitive": true
+            }
+          },
+          "description": "The AWS provider is used to interact with AWS services.",
+          "description_kind": "markdown"
+        }
+      },
+      "resource_schemas": {
+        "aws_instance": {
+          "version": 1,
+          "block": {
+            "attributes": {
+              "ami": {
+                "type": "string",
+                "description": "AMI to use for the instance",
+                "description_kind": "plain",
+                "required": true
+              },
+              "instance_type": {
+                "type": "string",
+                "description": "The instance type to use",
+                "description_kind": "plain",
+                "required": true
+              },
+              "id": {
+                "type": "string",
+                "description": "The instance ID",
+                "description_kind": "plain",
+                "computed": true
+              }
+            },
+            "block_types": {
+              "ebs_block_device": {
+                "nesting_mode": "set",
+                "block": {
+                  "attributes": {
+                    "device_name": {
+                      "type": "string",
+                      "required": true
+                    },
+                    "volume_size": {
+                      "type": "number",
+                      "optional": true
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Provides an EC2 instance resource",
+            "description_kind": "markdown"
+          }
+        }
+      },
+      "data_source_schemas": {
+        "aws_ami": {
+          "version": 0,
+          "block": {
+            "attributes": {
+              "most_recent": {
+                "type": "bool",
+                "optional": true
+              },
+              "image_id": {
+                "type": "string",
+                "computed": true
+              }
+            },
+            "description": "Get information about an Amazon Machine Image",
+            "description_kind": "plain"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Important Notes
+
+- You must run `terraform init` before running this command to ensure providers are installed
+- The command requires the `-json` flag; no other output formats are supported
+- This command works only with local backends; some remote backend types are not supported
+- The schema includes all providers declared in the configuration, even if they're not currently in use
+- Schema versions may change between provider versions, so always regenerate schemas after provider upgrades
+
+## Related Commands
+
+- [`terraform providers`](/cli/providers) - Show provider requirements
+- [`terraform init`](/cli/init) - Install providers
+- [`terraform show -json`](/cli/show) - Show state or plan in JSON format
+- [`terraform version`](/cli/version) - Show Terraform and provider versions

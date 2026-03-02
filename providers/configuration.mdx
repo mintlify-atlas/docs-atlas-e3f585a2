@@ -1,0 +1,343 @@
+---
+title: "Provider Configuration"
+description: "Learn how to configure Terraform providers in your configuration files."
+---
+
+## Provider Configuration Basics
+
+Providers are configured using `provider` blocks in your Terraform configuration. Each provider has its own configuration schema that defines the arguments it accepts.
+
+## Declaring Provider Requirements
+
+Before using a provider, declare it in a `required_providers` block:
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = ">= 3.0"
+    }
+  }
+}
+```
+
+### Provider Source Addresses
+
+The `source` attribute uses the format: `[hostname/]namespace/type`
+
+- **hostname** (optional): Registry hostname (defaults to `registry.terraform.io`)
+- **namespace**: Organizational namespace (e.g., `hashicorp`, `aws`)
+- **type**: Provider type name (e.g., `aws`, `azurerm`)
+
+Examples:
+- `hashicorp/aws` → `registry.terraform.io/hashicorp/aws`
+- `aws` → legacy provider reference (not recommended)
+- `example.com/myorg/custom` → custom registry provider
+
+### Version Constraints
+
+Version constraints use semantic versioning operators:
+
+- `= 1.0.0` - Exact version
+- `!= 1.0.0` - Exclude specific version
+- `> 1.0.0` - Greater than
+- `>= 1.0.0` - Greater than or equal to
+- `< 2.0.0` - Less than
+- `<= 2.0.0` - Less than or equal to
+- `~> 1.2.0` - Pessimistic constraint (>= 1.2.0, < 1.3.0)
+
+Multiple constraints can be combined:
+
+```hcl
+version = ">= 1.0.0, < 2.0.0"
+```
+
+## Configuring Providers
+
+After declaring requirements, configure the provider with a `provider` block:
+
+```hcl
+provider "aws" {
+  region     = "us-west-2"
+  access_key = var.aws_access_key
+  secret_key = var.aws_secret_key
+  
+  default_tags {
+    tags = {
+      Environment = "production"
+      Terraform   = "true"
+    }
+  }
+}
+```
+
+## Provider Configuration Validation
+
+When you configure a provider, Terraform performs validation in multiple stages:
+
+### 1. Schema Validation
+
+Terraform validates the configuration against the provider's schema from `GetProviderSchema`. This checks:
+- Required attributes are present
+- Attribute types match the schema
+- Unknown attributes are flagged as errors
+
+### 2. Provider-Specific Validation
+
+Providers can implement custom validation logic in the `ValidateProviderConfig` method (`internal/providers/provider.go:30`):
+
+```go
+type ValidateProviderConfigRequest struct {
+    Config cty.Value // Raw configuration value
+}
+
+type ValidateProviderConfigResponse struct {
+    PreparedConfig cty.Value // Unused in protocol v5
+    Diagnostics    tfdiags.Diagnostics
+}
+```
+
+Providers can return warnings or errors based on business logic, such as:
+- Checking for conflicting configuration options
+- Validating credential formats
+- Verifying API endpoint reachability
+
+### 3. Configuration Application
+
+During initialization, Terraform calls `ConfigureProvider` (`internal/providers/provider.go:437`):
+
+```go
+type ConfigureProviderRequest struct {
+    TerraformVersion   string
+    Config             cty.Value
+    ClientCapabilities ClientCapabilities
+}
+
+type ConfigureProviderResponse struct {
+    Diagnostics tfdiags.Diagnostics
+}
+```
+
+At this stage, the provider:
+- Establishes connections to remote APIs
+- Authenticates with credentials
+- Initializes internal clients and state
+- Returns diagnostics if configuration is invalid
+
+## Multiple Provider Configurations
+
+You can define multiple configurations for the same provider using aliases:
+
+```hcl
+provider "aws" {
+  region = "us-west-2"
+}
+
+provider "aws" {
+  alias  = "east"
+  region = "us-east-1"
+}
+```
+
+Reference aliased providers in resources:
+
+```hcl
+resource "aws_instance" "west" {
+  # Uses the default provider configuration
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+}
+
+resource "aws_instance" "east" {
+  provider      = aws.east
+  ami           = "ami-87654321"
+  instance_type = "t2.micro"
+}
+```
+
+## Provider Configuration Inheritance
+
+In module hierarchies, provider configurations are inherited:
+
+### Root Module
+
+```hcl
+provider "aws" {
+  region = "us-west-2"
+}
+
+module "network" {
+  source = "./modules/network"
+  # Inherits the aws provider configuration
+}
+```
+
+### Explicit Provider Passing
+
+You can explicitly pass provider configurations to modules:
+
+```hcl
+module "network" {
+  source = "./modules/network"
+  
+  providers = {
+    aws = aws.east
+  }
+}
+```
+
+## Environment Variables
+
+Many providers support environment-based configuration:
+
+```bash
+export AWS_REGION=us-west-2
+export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+```
+
+Provider configuration attributes typically override environment variables:
+
+```hcl
+provider "aws" {
+  # This takes precedence over AWS_REGION
+  region = "us-east-1"
+}
+```
+
+## Provider Meta-Arguments
+
+Some meta-arguments can be used in provider blocks:
+
+### alias
+
+Create multiple configurations for the same provider:
+
+```hcl
+provider "aws" {
+  alias  = "backup"
+  region = "us-east-2"
+}
+```
+
+### version (deprecated)
+
+Older syntax for version constraints (use `required_providers` instead):
+
+```hcl
+# Deprecated - use required_providers
+provider "aws" {
+  version = "~> 5.0"
+}
+```
+
+## Sensitive Values
+
+Provider configurations often include sensitive values. Use variables with sensitive flag:
+
+```hcl
+variable "database_password" {
+  type      = string
+  sensitive = true
+}
+
+provider "mysql" {
+  endpoint = "example.com:3306"
+  username = "admin"
+  password = var.database_password
+}
+```
+
+Terraform masks sensitive values in output and logs.
+
+## Provider Configuration Context
+
+Providers receive additional context during configuration (`internal/providers/provider.go:437`):
+
+- **TerraformVersion**: The version of Terraform executing the provider
+- **ClientCapabilities**: Features supported by the Terraform client
+
+Providers can use this information to:
+- Ensure compatibility with the Terraform version
+- Enable/disable features based on client capabilities
+- Provide version-specific warnings or errors
+
+## Configuration Lifecycle
+
+The provider configuration lifecycle follows these steps:
+
+1. **Parse**: Terraform parses the HCL configuration
+2. **Schema Lookup**: Retrieves provider schema via `GetProviderSchema`
+3. **Decode**: Decodes configuration against the schema
+4. **Validate**: Calls `ValidateProviderConfig` for custom validation
+5. **Configure**: Calls `ConfigureProvider` to initialize the provider
+6. **Ready**: Provider is ready for resource operations
+
+If any step fails, Terraform reports diagnostics and halts execution.
+
+## Best Practices
+
+### Use Variables for Credentials
+
+Never hardcode credentials:
+
+```hcl
+# Bad
+provider "aws" {
+  access_key = "AKIAIOSFODNN7EXAMPLE"
+  secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+}
+
+# Good
+provider "aws" {
+  access_key = var.aws_access_key
+  secret_key = var.aws_secret_key
+}
+```
+
+### Pin Provider Versions
+
+Use version constraints to ensure reproducible deployments:
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0.0" # Pin to minor version
+    }
+  }
+}
+```
+
+### Use Required Providers Block
+
+Always declare providers in `required_providers` for explicit dependency management:
+
+```hcl
+# Recommended
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+# Not recommended - implicit provider
+resource "aws_instance" "example" {
+  # Terraform infers the provider
+}
+```
+
+## Next Steps
+
+- [Provider Installation](/providers/installation) - Learn about provider installation and caching
+- [Provider Development](/providers/development) - Build your own providers
+- [Providers Overview](/providers/overview) - Understand provider architecture

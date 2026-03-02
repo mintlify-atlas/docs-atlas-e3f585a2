@@ -1,0 +1,389 @@
+---
+title: 'Infrastructure as Code'
+description: 'How Terraform implements declarative infrastructure management through code'
+---
+
+## What is Infrastructure as Code?
+
+Infrastructure as Code (IaC) is the practice of managing and provisioning infrastructure through machine-readable definition files rather than physical hardware configuration or interactive configuration tools. Terraform implements IaC using a declarative approach where you specify the desired end state, and Terraform determines the actions needed to achieve it.
+
+## Declarative vs Imperative
+
+<CardGroup cols={2}>
+  <Card title="Declarative (Terraform)" icon="book">
+    **What** you want, not **how** to achieve it
+    
+    ```hcl
+    resource "aws_instance" "web" {
+      ami           = "ami-123456"
+      instance_type = "t2.micro"
+    }
+    ```
+  </Card>
+  
+  <Card title="Imperative (Scripts)" icon="terminal">
+    Step-by-step **how** to create resources
+    
+    ```bash
+    aws ec2 run-instances \
+      --image-id ami-123456 \
+      --instance-type t2.micro
+    ```
+  </Card>
+</CardGroup>
+
+<Info>
+Terraform's declarative approach means you describe the desired state in configuration files, and Terraform calculates the difference between current and desired state to determine what actions to take.
+</Info>
+
+## The Terraform Language (HCL)
+
+Terraform uses HashiCorp Configuration Language (HCL) to define infrastructure. HCL is designed to be both human-readable and machine-parsable.
+
+### Configuration Structure
+
+Terraform configuration consists of several types of blocks:
+
+```hcl
+# Provider Configuration
+provider "aws" {
+  region = "us-west-2"
+}
+
+# Resource Declaration
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+  
+  tags = {
+    Name = "main-vpc"
+  }
+}
+
+# Data Source
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"]
+}
+
+# Output Value
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+```
+
+### How Configuration is Processed
+
+The configuration loading process happens in [`internal/configs`](https://github.com/hashicorp/terraform/blob/main/internal/configs/):
+
+<Steps>
+  <Step title="Parse HCL Files">
+    The configuration loader reads all `.tf` files in a directory and parses them using the HCL parser into an Abstract Syntax Tree (AST).
+    
+    Implementation: [`configload.Loader`](https://github.com/hashicorp/terraform/blob/main/internal/configs/configload/)
+  </Step>
+  
+  <Step title="Build Configuration Model">
+    Terraform constructs a hierarchical model representing the entire configuration, including all modules.
+    
+    Result: [`configs.Config`](https://github.com/hashicorp/terraform/blob/main/internal/configs/) object
+  </Step>
+  
+  <Step title="Validate Structure">
+    Basic structural validation ensures required blocks are present and properly formatted.
+  </Step>
+  
+  <Step title="Defer Expression Evaluation">
+    Expressions that depend on other resources remain as [`hcl.Expression`](https://pkg.go.dev/github.com/hashicorp/hcl/v2#Expression) objects for later evaluation during the graph walk.
+  </Step>
+</Steps>
+
+<Note>
+Not all configuration can be interpreted immediately. Values that depend on resource attributes or outputs from other resources are kept as HCL expressions and evaluated during graph execution when dependencies are available.
+</Note>
+
+## Resource Declarations
+
+Resources are the most important element in Terraform configuration. Each resource block describes one or more infrastructure objects.
+
+### Resource Syntax
+
+```hcl
+resource "<RESOURCE_TYPE>" "<LOCAL_NAME>" {
+  # Configuration arguments
+  argument1 = value1
+  argument2 = value2
+  
+  # Nested blocks
+  nested_block {
+    nested_arg = value
+  }
+  
+  # Lifecycle customization
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+```
+
+### Resource Addressing
+
+Each resource has a unique address in the format `<TYPE>.<NAME>`, for example:
+
+- `aws_instance.web` - A single resource instance
+- `aws_instance.web[0]` - First instance when using `count`
+- `aws_instance.web["prod"]` - Instance with key "prod" when using `for_each`
+
+Implementation: [`addrs.Resource`](https://github.com/hashicorp/terraform/blob/main/internal/addrs/)
+
+### Resource Meta-Arguments
+
+Terraform supports several meta-arguments that work with any resource:
+
+| Meta-Argument | Purpose | Example |
+|---------------|---------|----------|
+| `count` | Create multiple instances | `count = 3` |
+| `for_each` | Create instances from a map/set | `for_each = var.instances` |
+| `depends_on` | Explicit dependencies | `depends_on = [aws_vpc.main]` |
+| `provider` | Select provider configuration | `provider = aws.west` |
+| `lifecycle` | Customize resource behavior | See lifecycle section below |
+
+### Lifecycle Customization
+
+The `lifecycle` block controls how Terraform manages resources:
+
+```hcl
+resource "aws_instance" "example" {
+  # ... other configuration ...
+  
+  lifecycle {
+    # Prevent accidental deletion
+    prevent_destroy = true
+    
+    # Ignore changes to specific attributes
+    ignore_changes = [
+      tags["LastModified"],
+    ]
+    
+    # Create replacement before destroying
+    create_before_destroy = true
+    
+    # Force replacement when another resource changes
+    replace_triggered_by = [
+      aws_security_group.example.id
+    ]
+  }
+}
+```
+
+<Tip>
+Lifecycle rules are configuration-driven behaviors that modify Terraform's default planning. They're documented in detail in [`docs/planning-behaviors.md`](https://github.com/hashicorp/terraform/blob/main/docs/planning-behaviors.md:138).
+</Tip>
+
+## Expressions and References
+
+Terraform's expression system enables dynamic configuration through references, functions, and operators.
+
+### Resource References
+
+Reference attributes of other resources:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.ubuntu.id
+  subnet_id     = aws_subnet.main.id
+  vpc_security_group_ids = [aws_security_group.web.id]
+}
+```
+
+### Expression Evaluation Flow
+
+Expression evaluation happens during vertex execution in [`internal/lang`](https://github.com/hashicorp/terraform/blob/main/internal/lang/):
+
+<Steps>
+  <Step title="Analyze References">
+    [`lang.References`](https://github.com/hashicorp/terraform/blob/main/internal/terraform/evaluate.go) analyzes expressions to find which other objects they reference.
+  </Step>
+  
+  <Step title="Retrieve Dependency Data">
+    Fetch current values from state for all referenced objects.
+  </Step>
+  
+  <Step title="Build Evaluation Context">
+    Create lookup tables with available values and built-in functions via [`lang.Scope`](https://github.com/hashicorp/terraform/blob/main/internal/lang/).
+  </Step>
+  
+  <Step title="Evaluate Expression">
+    HCL evaluates the expression against the context, producing a [`cty.Value`](https://pkg.go.dev/github.com/zclconf/go-cty/cty#Value).
+  </Step>
+</Steps>
+
+<Note>
+The `cty` type system (from github.com/zclconf/go-cty) represents all Terraform values. It supports rich type checking and ensures type safety across the entire system.
+</Note>
+
+## Modules: Reusable Infrastructure Components
+
+Modules are containers for multiple resources that are used together. Every Terraform configuration has at least one module (the root module).
+
+### Module Structure
+
+```hcl
+# Root module calling a child module
+module "vpc" {
+  source = "./modules/vpc"
+  
+  cidr_block = "10.0.0.0/16"
+  name       = "production"
+}
+
+# Access module outputs
+resource "aws_instance" "web" {
+  subnet_id = module.vpc.public_subnet_id
+}
+```
+
+### Module Loading
+
+The [`configload.Loader`](https://github.com/hashicorp/terraform/blob/main/internal/configs/configload/) handles module installation and loading:
+
+1. **Installation** (`terraform init`) - Downloads and caches modules from sources
+2. **Loading** - Recursively loads all child modules to build complete [`configs.Config`](https://github.com/hashicorp/terraform/blob/main/internal/configs/)
+3. **Expansion** - During graph building, modules with `count` or `for_each` are dynamically expanded
+
+## Variables and Outputs
+
+### Input Variables
+
+Input variables parameterize your configuration:
+
+```hcl
+variable "instance_count" {
+  description = "Number of instances to create"
+  type        = number
+  default     = 2
+  
+  validation {
+    condition     = var.instance_count > 0
+    error_message = "Must create at least one instance."
+  }
+}
+```
+
+Variable evaluation is handled by [`eval_variable.go`](https://github.com/hashicorp/terraform/blob/main/internal/terraform/eval_variable.go).
+
+### Output Values
+
+Outputs expose values for external use:
+
+```hcl
+output "instance_ips" {
+  description = "Public IP addresses of instances"
+  value       = aws_instance.web[*].public_ip
+}
+```
+
+<Info>
+Only root module outputs are persisted in state. Child module outputs exist only during execution to pass values between modules.
+</Info>
+
+## Configuration-Driven Behavior
+
+Terraform's behavior can be customized through configuration rather than command-line flags:
+
+### Moved Blocks
+
+Document refactoring to prevent destroy/create cycles:
+
+```hcl
+moved {
+  from = aws_instance.example
+  to   = aws_instance.web
+}
+```
+
+This causes Terraform to update the state bindings before planning, transforming what would be a delete + create into a no-op or update.
+
+### Terraform Block
+
+Specify requirements and behavior:
+
+```hcl
+terraform {
+  required_version = ">= 1.0"
+  
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+  
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "prod/terraform.tfstate"
+  }
+}
+```
+
+## Why Configuration as Code Matters
+
+<CardGroup cols={2}>
+  <Card title="Version Control" icon="code-branch">
+    Track every infrastructure change in Git with full history and blame information.
+  </Card>
+  
+  <Card title="Code Review" icon="code-pull-request">
+    Review infrastructure changes before applying, catching errors early.
+  </Card>
+  
+  <Card title="Automation" icon="robot">
+    Integrate with CI/CD pipelines for automated testing and deployment.
+  </Card>
+  
+  <Card title="Documentation" icon="book">
+    Configuration serves as living documentation of your infrastructure.
+  </Card>
+  
+  <Card title="Reusability" icon="recycle">
+    Share and reuse modules across projects and teams.
+  </Card>
+  
+  <Card title="Consistency" icon="check-double">
+    Ensure identical infrastructure across environments.
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Version Control">
+    Always commit your Terraform configuration to version control. Use `.gitignore` to exclude:
+    - `.terraform/` directory
+    - `*.tfstate` files (store state remotely instead)
+    - `*.tfvars` files with secrets
+  </Accordion>
+  
+  <Accordion title="Organize with Modules">
+    Break large configurations into logical modules. Each module should have a single, well-defined purpose.
+  </Accordion>
+  
+  <Accordion title="Use Variables for Flexibility">
+    Parameterize values that differ between environments or deployments using variables.
+  </Accordion>
+  
+  <Accordion title="Document Your Code">
+    Use comments and descriptions to explain why decisions were made, not just what the code does.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<Card title="Execution Plans" icon="list-check" href="/concepts/execution-plans">
+  Learn how Terraform transforms configuration into actionable plans
+</Card>
+
+## References
+
+- [Configuration Loader Source](https://github.com/hashicorp/terraform/blob/main/internal/configs/)
+- [Expression Evaluation](https://github.com/hashicorp/terraform/blob/main/internal/lang/)
+- [Planning Behaviors Documentation](https://github.com/hashicorp/terraform/blob/main/docs/planning-behaviors.md)

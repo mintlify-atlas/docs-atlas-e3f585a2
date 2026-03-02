@@ -1,0 +1,522 @@
+---
+title: Debugging Terraform
+description: Learn techniques and tools for debugging Terraform operations, including using Delve debugger, telemetry, and logging.
+---
+
+# Debugging Terraform
+
+This guide covers debugging techniques for Terraform, from automated tests to complex runtime operations using real configurations.
+
+## Overview
+
+Terraform is written in Go, which means you can use standard Go debugging tools:
+
+- [Delve](https://github.com/go-delve/delve) - Go debugger
+- [GoLand](https://www.jetbrains.com/help/go/debugging-code.html) - JetBrains IDE with built-in debugging
+- [VS Code Go Extension](https://code.visualstudio.com/docs/languages/go#_debugging) - VS Code debugging support
+
+## Debugging Automated Tests
+
+The most straightforward debugging workflow is debugging automated tests.
+
+### VS Code Test Debugging
+
+The Go extension adds `run test | debug test` options above all tests in `*_test.go` files:
+
+1. Open a test file (e.g., `internal/command/test_test.go`)
+2. Look for the `run test | debug test` options above each test function
+3. Click `debug test` to start debugging immediately
+
+No prior configuration required!
+
+### Custom Test Launch Configuration
+
+For more control (e.g., environment variables), create a launch configuration:
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run selected test",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}",
+      "args": [
+        "-test.run",
+        "^${selectedText}$"
+      ],
+      "env": {
+        "TF_LOG": "DEBUG"
+      }
+    }
+  ]
+}
+```
+
+**Usage:**
+1. Highlight a test name in the editor
+2. Start the debugger with "Run selected test" configuration
+
+Source: `docs/debugging.md:22-29`
+
+## Debugging Terraform Operations
+
+### Method 1: Delve CLI Tool
+
+This approach gives you maximum control over the debugging process.
+
+#### Step 1: Compile with Debug Flags
+
+```bash
+go install -gcflags="all=-N -l"
+```
+
+This disables optimizations and inlining, making debugging easier.
+
+#### Step 2: Start Debug Server
+
+```bash
+# Navigate to your Terraform configuration directory
+cd /path/to/terraform/config
+
+# Start debug server (adjust terraform binary path if needed)
+dlv exec $HOME/go/bin/terraform --headless --listen :2345 --log -- apply
+```
+
+Replace `apply` with any Terraform command you want to debug.
+
+Source: `docs/debugging.md:42-55`
+
+#### Step 3a: Connect via Delve CLI
+
+```bash
+dlv connect :2345
+```
+
+Now you can use Delve commands:
+
+```bash
+# Set breakpoint
+(dlv) break main.main
+
+# Continue execution
+(dlv) continue
+
+# Step through code
+(dlv) step
+
+# Print variables
+(dlv) print variableName
+```
+
+Source: `docs/debugging.md:57-63`
+
+#### Step 3b: Connect via VS Code
+
+Create a launch configuration:
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Connect to dlv server",
+      "type": "go",
+      "request": "attach",
+      "mode": "remote",
+      "remotePath": "${workspaceFolder}",
+      "port": 2345,
+      "host": "127.0.0.1"
+    }
+  ]
+}
+```
+
+Then select "Connect to dlv server" from the debug panel.
+
+Source: `docs/debugging.md:65-72`
+
+### Method 2: VS Code Debugger (Direct Launch)
+
+Launch Terraform directly from VS Code without starting a separate debug server.
+
+#### Step 1: Create Launch Configuration
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Terraform in debug mode",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}",
+      "args": [
+        "apply",
+        "-auto-approve"
+      ],
+      "cwd": "/path/to/terraform/config",
+      "env": {
+        "TF_LOG": "DEBUG"
+      }
+    }
+  ]
+}
+```
+
+Alternatively, use `-chdir` argument:
+
+```json
+{
+  "args": [
+    "-chdir=/path/to/terraform/config",
+    "apply",
+    "-auto-approve"
+  ]
+}
+```
+
+#### Step 2: Run the Configuration
+
+1. Navigate to Run and Debug view (Ctrl+Shift+D)
+2. Select "Run Terraform in debug mode"
+3. Press F5 or click the green arrow
+
+This executes the Terraform command just like running it from the command line, but with full debugging capabilities.
+
+Source: `docs/debugging.md:74-98`
+
+## Telemetry and Tracing
+
+Terraform includes OpenTelemetry support for distributed tracing.
+
+### Enabling OpenTelemetry
+
+Set the environment variable to enable OTLP trace exporter:
+
+```bash
+export OTEL_TRACES_EXPORTER=otlp
+```
+
+<Warning>
+This is an experimental feature subject to change. Do not depend on the structure of trace output in production.
+</Warning>
+
+Implementation from `telemetry.go:20-91`:
+
+```go
+// OpenTelemetry is disabled by default
+func openTelemetryInit() error {
+    if os.Getenv(openTelemetryExporterEnvVar) != "otlp" {
+        return nil // Discard all telemetry by default
+    }
+    
+    otelResource := resource.NewWithAttributes(
+        semconv.SchemaURL,
+        semconv.ServiceNameKey.String("Terraform CLI"),
+        semconv.ServiceVersionKey.String(version.Version),
+    )
+    
+    // Enable OTLP exporter with standard environment variables
+    exp, err := autoexport.NewSpanExporter(context.Background())
+    if err != nil {
+        return err
+    }
+    
+    sp := sdktrace.NewSimpleSpanProcessor(exp)
+    provider := sdktrace.NewTracerProvider(
+        sdktrace.WithSpanProcessor(sp),
+        sdktrace.WithResource(otelResource),
+    )
+    otel.SetTracerProvider(provider)
+    
+    return nil
+}
+```
+
+### Standard OTLP Configuration
+
+Configure the OTLP exporter using standard environment variables:
+
+```bash
+# Enable OTLP export
+export OTEL_TRACES_EXPORTER=otlp
+
+# Set OTLP endpoint
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+
+# Set OTLP headers (e.g., for authentication)
+export OTEL_EXPORTER_OTLP_HEADERS="api-key=your-key-here"
+
+# Set service name
+export OTEL_SERVICE_NAME="terraform-debugging"
+```
+
+See [OpenTelemetry OTLP Exporter Configuration](https://opentelemetry.io/docs/specs/otel/protocol/exporter/#configuration-options) for all options.
+
+### Using Tracers
+
+Terraform initializes tracers in different packages:
+
+```go
+// From internal/command/telemetry.go
+var tracer trace.Tracer
+
+func init() {
+    tracer = otel.Tracer("github.com/hashicorp/terraform/internal/command")
+}
+```
+
+Other packages with tracing:
+- `internal/stacks/stackruntime/telemetry.go`
+- `internal/stacks/stackruntime/internal/stackeval/telemetry.go`
+- `internal/rpcapi/telemetry.go`
+- `internal/promising/telemetry.go`
+
+## Logging
+
+### Environment Variables
+
+Control logging verbosity with `TF_LOG`:
+
+```bash
+# Log everything
+export TF_LOG=TRACE
+
+# Log levels: TRACE, DEBUG, INFO, WARN, ERROR
+export TF_LOG=DEBUG
+
+# Log to file
+export TF_LOG_PATH=terraform.log
+
+# Component-specific logging
+export TF_LOG_CORE=DEBUG
+export TF_LOG_PROVIDER=TRACE
+```
+
+### Reading Logs
+
+Logs include:
+- Timestamp
+- Log level
+- Component
+- Message
+
+Example:
+
+```
+2026-03-02T10:15:30.123-0700 [INFO]  backend/local: apply calling Apply
+2026-03-02T10:15:30.456-0700 [DEBUG] backend/local: waiting for the ApplyGraph
+2026-03-02T10:15:30.789-0700 [TRACE] vertex "provider.aws": visit complete
+```
+
+## Common Debugging Scenarios
+
+### Debugging Cloud Backend Issues
+
+Enable detailed HTTP logging:
+
+```bash
+export TF_LOG=DEBUG
+export TF_LOG_PATH=cloud-debug.log
+terraform plan
+```
+
+Check `cloud-debug.log` for:
+- API request/response details
+- Authentication issues
+- Service discovery problems
+- Version compatibility checks
+
+Relevant code: `internal/cloud/backend.go:611-619`
+
+### Debugging Test Failures
+
+1. Run test with verbose output:
+
+```bash
+terraform test -verbose -json > test-output.json
+```
+
+2. Set breakpoint in test runner:
+
+Location: `internal/command/test.go:193-200`
+
+3. Examine test state:
+
+```go
+// In debugger, inspect:
+// - preparation.Config: Loaded configuration
+// - preparation.Variables: Input variables
+// - runner: Test suite runner state
+// - status: Current test status
+```
+
+### Debugging Stacks Runtime
+
+Set breakpoints in evaluation phases:
+
+**Validation phase:**
+Location: `internal/stacks/stackruntime/internal/stackeval/` - `Validate` methods
+
+**Planning phase:**
+Location: `internal/stacks/stackruntime/internal/stackeval/` - `PlanChanges` methods
+
+**Apply phase:**
+Location: `internal/stacks/stackruntime/internal/stackeval/` - `CheckApply` methods
+
+**Expression evaluation:**
+Location: `internal/stacks/stackruntime/internal/stackeval/` - `EvalExpr` functions
+
+### Debugging Provider Calls
+
+Enable provider logging:
+
+```bash
+export TF_LOG_PROVIDER=TRACE
+export TF_LOG_PATH=provider.log
+terraform apply
+```
+
+Set breakpoints in provider communication:
+- Resource CRUD operations
+- Provider configuration
+- Schema validation
+
+## Performance Profiling
+
+### CPU Profiling
+
+```bash
+# Enable CPU profiling
+export TF_CPU_PROFILE=cpu.prof
+terraform apply
+
+# Analyze profile
+go tool pprof cpu.prof
+```
+
+### Memory Profiling
+
+```bash
+# Enable memory profiling
+export TF_MEM_PROFILE=mem.prof
+terraform apply
+
+# Analyze profile
+go tool pprof mem.prof
+```
+
+### Trace Profiling
+
+```bash
+# Generate execution trace
+go test -trace=trace.out ./...
+
+# View trace
+go tool trace trace.out
+```
+
+## Best Practices
+
+### 1. Use Appropriate Debug Granularity
+
+```bash
+# For general debugging
+export TF_LOG=DEBUG
+
+# For deep investigation
+export TF_LOG=TRACE
+
+# For production troubleshooting
+export TF_LOG=INFO
+```
+
+### 2. Isolate Issues with Minimal Configs
+
+Create minimal reproduction:
+
+```hcl
+# minimal.tf - Reproduce specific issue
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = "us-west-2"
+}
+
+resource "aws_instance" "test" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+}
+```
+
+### 3. Preserve Debug Information
+
+Save debug output for analysis:
+
+```bash
+# Capture all output
+terraform apply 2>&1 | tee terraform-debug.log
+
+# With JSON output
+terraform apply -json 2>&1 | tee terraform-debug.json
+```
+
+### 4. Use Conditional Breakpoints
+
+In VS Code or Delve, set conditional breakpoints:
+
+```
+# Break only when specific condition is true
+Condition: workspaceName == "production"
+
+# Break after N hits
+Hit Count: 10
+```
+
+### 5. Leverage Test Debugging
+
+Write tests to reproduce issues:
+
+```go
+// internal/command/test_debug_test.go
+func TestReproduceIssue(t *testing.T) {
+    // Set up minimal reproduction
+    // Add breakpoint here
+    // Step through issue
+}
+```
+
+## Debugging Resources
+
+### Documentation
+
+- [Delve Documentation](https://github.com/go-delve/delve/tree/master/Documentation)
+- [VS Code Go Debugging](https://github.com/golang/vscode-go/wiki/debugging)
+- [OpenTelemetry Go](https://opentelemetry.io/docs/instrumentation/go/)
+
+### Example Configurations
+
+Terraform includes example debugging configurations:
+- `docs/debugging-configs/vscode/debug-automated-tests/launch.json`
+- `docs/debugging-configs/vscode/launch-via-cli/launch.json`
+- `docs/debugging-configs/vscode/launch-from-vscode-debugger/launch.json`
+
+## Related Resources
+
+- [Testing Framework](/advanced/testing) - Debug test failures
+- [Cloud Integration](/advanced/cloud-integration) - Debug remote operations
+- [Stacks](/advanced/stacks) - Debug Stacks runtime issues

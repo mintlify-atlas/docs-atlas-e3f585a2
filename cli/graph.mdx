@@ -1,0 +1,57 @@
+---
+title: terraform graph
+description: The terraform graph command generates a visual representation of a configuration or execution plan.
+---
+
+# Command: graph
+
+The `terraform graph` command is used to generate a visual representation of either a configuration or execution plan. The output is in the DOT format, which can be used by [GraphViz](http://www.graphviz.org) to generate charts.
+
+## Usage
+
+```bash
+terraform graph [options]
+```
+
+By default, the graph shows a summary only of the relationships between resources in the configuration, since those are the main objects that have side-effects whose ordering is significant. You can generate more detailed graphs reflecting Terraform's actual evaluation strategy by specifying the `-type=TYPE` option to select an operation type.
+
+The graph is presented in the DOT language. The typical program that can read this format is GraphViz, but many web services are also available to read this format.
+
+## Options
+
+- `-plan=tfplan` - Render graph using the specified plan file instead of the configuration in the current directory. Implies `-type=apply`.
+
+- `-draw-cycles` - Highlight any cycles in the graph with colored edges. This helps when diagnosing cycle errors. This option is supported only when illustrating a real evaluation graph, selected using the `-type=TYPE` option.
+
+- `-type=TYPE` - Type of operation graph to output. Can be: `plan`, `plan-refresh-only`, `plan-destroy`, or `apply`. By default, Terraform just summarizes the relationships between the resources in your configuration, without any particular operation in mind. Full operation graphs are more detailed but therefore often harder to read.
+
+- `-module-depth=n` - **(Deprecated)** In prior versions of Terraform, specified the depth of modules to show in the output.
+
+## Graph Types
+
+The `-type` flag can be used to control the type of graph shown. The supported types are:
+
+- **plan** - Show the graph for a normal plan operation
+- **plan-refresh-only** - Show the graph for a refresh-only plan
+- **plan-destroy** - Show the graph for a destroy plan
+- **apply** - Show the graph for applying changes
+
+## Example
+
+Generate a resource dependency graph:
+
+```bash
+terraform graph | dot -Tsvg > graph.svg
+```
+
+Generate a detailed plan graph:
+
+```bash
+terraform graph -type=plan | dot -Tpng > graph.png
+```
+
+Highlight cycles in the graph:
+
+```bash
+terraform graph -type=plan -draw-cycles | dot -Tsvg > graph.svg
+```

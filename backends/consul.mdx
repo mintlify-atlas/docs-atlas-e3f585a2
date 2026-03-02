@@ -1,0 +1,297 @@
+---
+title: Consul Backend
+description: Store Terraform state in HashiCorp Consul with native locking.
+---
+
+# Consul Backend
+
+The **Consul** backend stores state in HashiCorp Consul with support for state locking and consistency.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/consul/backend.go`
+
+## Use Cases
+
+- Service mesh environments using Consul
+- High availability requirements with strong consistency
+- Dynamic infrastructure with service discovery
+- Multi-datacenter deployments
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "consul" {
+    address = "consul.example.com:8500"
+    path    = "terraform/state"
+  }
+}
+```
+
+## Required Configuration
+
+### path
+- **Type:** String
+- **Required:** Yes
+- **Description:** Path in the Consul KV store where the state will be stored
+
+```hcl
+terraform {
+  backend "consul" {
+    path = "apps/web/terraform/state"
+  }
+}
+```
+
+## Optional Configuration
+
+### address
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"127.0.0.1:8500"`
+- **Description:** Address of the Consul cluster
+
+```hcl
+terraform {
+  backend "consul" {
+    address = "consul.example.com:8500"
+    path    = "terraform/state"
+  }
+}
+```
+
+### scheme
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"http"`
+- **Valid Values:** `http`, `https`
+- **Description:** URL scheme for communicating with Consul
+
+```hcl
+terraform {
+  backend "consul" {
+    address = "consul.example.com:8500"
+    scheme  = "https"
+    path    = "terraform/state"
+  }
+}
+```
+
+### datacenter
+- **Type:** String
+- **Optional:** Yes
+- **Description:** Datacenter to use (defaults to agent's datacenter)
+
+```hcl
+terraform {
+  backend "consul" {
+    address    = "consul.example.com:8500"
+    datacenter = "us-west-1"
+    path       = "terraform/state"
+  }
+}
+```
+
+## Authentication
+
+### Access Token (ACL)
+
+```hcl
+terraform {
+  backend "consul" {
+    address      = "consul.example.com:8500"
+    path         = "terraform/state"
+    access_token = "your-consul-acl-token"
+  }
+}
+```
+
+**Environment Variable:** `CONSUL_HTTP_TOKEN`
+
+### HTTP Basic Authentication
+
+```hcl
+terraform {
+  backend "consul" {
+    address   = "consul.example.com:8500"
+    path      = "terraform/state"
+    http_auth = "username:password"
+  }
+}
+```
+
+Format: `username:password` (password is optional)
+
+## TLS/SSL Configuration
+
+### CA Certificate
+
+```hcl
+terraform {
+  backend "consul" {
+    address = "consul.example.com:8500"
+    scheme  = "https"
+    path    = "terraform/state"
+    ca_file = "/path/to/ca-cert.pem"
+  }
+}
+```
+
+**Environment Variable:** `CONSUL_CACERT`
+
+### Client Certificate (Mutual TLS)
+
+```hcl
+terraform {
+  backend "consul" {
+    address   = "consul.example.com:8500"
+    scheme    = "https"
+    path      = "terraform/state"
+    cert_file = "/path/to/client-cert.pem"
+    key_file  = "/path/to/client-key.pem"
+  }
+}
+```
+
+**Environment Variables:**
+- `CONSUL_CLIENT_CERT`
+- `CONSUL_CLIENT_KEY`
+
+## State Compression
+
+```hcl
+terraform {
+  backend "consul" {
+    address = "consul.example.com:8500"
+    path    = "terraform/state"
+    gzip    = true
+  }
+}
+```
+
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `false`
+- **Description:** Compress the state data using gzip before storing in Consul
+
+Compression reduces the size of the state data stored in Consul, which is useful for large state files.
+
+## State Locking
+
+```hcl
+terraform {
+  backend "consul" {
+    address = "consul.example.com:8500"
+    path    = "terraform/state"
+    lock    = true
+  }
+}
+```
+
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `true`
+- **Description:** Enable state locking
+
+Consul provides native distributed locking. Set to `false` to disable locking.
+
+## Configuration Options Summary
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `path` | string | Yes | - | Path in Consul KV store |
+| `access_token` | string | No | - | Consul ACL token |
+| `address` | string | No | `127.0.0.1:8500` | Consul server address |
+| `scheme` | string | No | `http` | URL scheme (http/https) |
+| `datacenter` | string | No | - | Consul datacenter |
+| `http_auth` | string | No | - | HTTP basic auth credentials |
+| `gzip` | bool | No | `false` | Compress state data |
+| `lock` | bool | No | `true` | Enable state locking |
+| `ca_file` | string | No | - | Path to CA certificate |
+| `cert_file` | string | No | - | Path to client certificate |
+| `key_file` | string | No | - | Path to client key |
+
+## Workspaces
+
+The Consul backend supports workspaces. Each workspace is stored at a different path:
+
+```
+terraform/state/default  # Default workspace
+terraform/state/dev      # Dev workspace
+terraform/state/prod     # Prod workspace
+```
+
+## Example: Production Setup with TLS
+
+```hcl
+terraform {
+  backend "consul" {
+    address = "consul.example.com:8500"
+    scheme  = "https"
+    path    = "terraform/production/state"
+    
+    access_token = "<consul-acl-token>"
+    
+    ca_file   = "/etc/consul.d/ca.pem"
+    cert_file = "/etc/consul.d/client.pem"
+    key_file  = "/etc/consul.d/client-key.pem"
+    
+    gzip = true
+    lock = true
+  }
+}
+```
+
+## Example: Multi-Datacenter
+
+```hcl
+terraform {
+  backend "consul" {
+    address    = "consul-us-west.example.com:8500"
+    datacenter = "us-west-1"
+    path       = "terraform/us-west/state"
+    scheme     = "https"
+    gzip       = true
+  }
+}
+```
+
+## ACL Requirements
+
+When using Consul ACLs, the token needs:
+
+```hcl
+key_prefix "terraform/" {
+  policy = "write"
+}
+
+session_prefix "" {
+  policy = "write"
+}
+```
+
+The `session` permission is required for state locking.
+
+## Advantages
+
+1. **Native Locking** - Built-in distributed locking with Consul sessions
+2. **High Availability** - Consul's consensus protocol ensures consistency
+3. **Service Discovery** - Integrates with existing Consul infrastructure
+4. **Multi-Datacenter** - Support for geo-distributed teams
+5. **Encryption** - TLS support for data in transit
+
+## Limitations
+
+1. **Size Limits** - Consul has a default maximum value size of 512KB
+2. **Compression Recommended** - Enable `gzip` for large state files
+3. **Performance** - Not optimized for very large state files
+
+## Best Practices
+
+1. **Enable compression** for state files larger than 100KB
+2. **Use ACL tokens** with minimal required permissions
+3. **Enable TLS** for production environments
+4. **Separate paths** for different environments
+5. **Monitor Consul** performance and health
+6. **Keep state small** - avoid storing large binary data

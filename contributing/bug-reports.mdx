@@ -1,0 +1,293 @@
+---
+title: Bug Report Process
+description: Understand how bug reports are triaged, labeled, and processed in the Terraform Core repository.
+---
+
+## Overview
+
+The Terraform Core team follows a structured bug triage process to respond quickly to issue reports. The goal is to either get bugs ready for engineering to fix or close them with a clear explanation if the team can't help.
+
+## Bug Report Lifecycle
+
+Every bug report goes through these stages:
+
+1. **New**: Initial filtering and categorization
+2. **Unreproduced**: Clarification and reproduction
+3. **Confirmed**: Verified and reproducible
+4. **Explained**: Root cause identified
+5. **Fixed**: PR merged or issue closed
+
+## Stage 1: New Issues
+
+Newly created issues require initial filtering:
+
+### What Happens
+
+- Label backends, provisioners, and providers to route to correct teams
+- Point help requests to the community forum and close the issue
+- Close reports against old, unsupported versions
+- Prompt users for additional information if reproduction case is incomplete
+
+### Labels Applied
+
+- `new` - Fresh issue not yet triaged
+- `waiting-response` - Needs user response during initial filtering
+- Backend/provisioner labels for routing
+
+### When Complete
+
+The `new` label is removed after initial filtering. High-impact issues may be assigned to a milestone immediately.
+
+<Info>
+  View [newly created issues](https://github.com/hashicorp/terraform/issues?q=is%3Aopen+label%3Anew+label%3Abug) awaiting triage.
+</Info>
+
+## Stage 2: Unreproduced Issues
+
+Core team members attempt to reproduce the issue.
+
+### If Reproducible Immediately
+
+The issue is labeled `confirmed` and moves to the next stage.
+
+### If Not Reproducible
+
+1. Label as `waiting for reproduction`
+2. Correspond with reporter to describe what's needed
+3. When team member reproduces, label as `confirmed`
+
+### Requirements for Confirmation
+
+- **Clear reproduction case**: Anyone should be able to reproduce without inventing details
+- **Complete information**: All relevant configuration, versions, and environment details
+- **Minimal example**: Smallest possible configuration that demonstrates the issue
+
+<Info>
+  View [unreproduced issues](https://github.com/hashicorp/terraform/issues?q=is%3Aopen+label%3Abug+-label%3Aconfirmed+-label%3Anew+-label%3A%22waiting+for+reproduction%22) needing clarification.
+</Info>
+
+## Stage 3: Confirmed Issues
+
+Verified, reproducible issues ready for analysis.
+
+### What Happens
+
+The team either:
+
+1. **Explains as expected behavior**
+   - Label as `working as designed`
+   - Explain why the behavior is intended
+   - Close the issue
+
+2. **Locates the defect**
+   - Identify root cause in codebase
+   - Document findings on the issue
+   - Label as `explained`
+   - Sometimes skip directly to submitting a PR
+
+### Priority Handling
+
+<Warning>
+  Confirmed crashes are considered high impact and should be prioritized.
+</Warning>
+
+View [confirmed crashes](https://github.com/hashicorp/terraform/issues?q=is%3Aopen+label%3Acrash+label%3Abug+label%3Aconfirmed) requiring urgent attention.
+
+<Info>
+  View all [confirmed issues](https://github.com/hashicorp/terraform/issues?q=is%3Aopen+label%3Abug+label%3Aconfirmed+-label%3Aexplained) awaiting analysis.
+</Info>
+
+## Stage 4: Explained Issues
+
+Issues with identified root causes ready for fixes.
+
+### What Happens
+
+1. Create a pull request to fix the issue
+2. Issues expected to be fixed in upcoming releases are assigned to milestones
+3. Complex issues may be labeled `pending project` if they require significant work
+
+<Info>
+  View [explained issues](https://github.com/hashicorp/terraform/issues?q=is%3Aopen+label%3Abug+label%3Aexplained) ready for PRs.
+</Info>
+
+## GitHub Labels
+
+### Triage Labels
+
+| Label | Description |
+|-------|-------------|
+| `new` | New issue not yet triaged |
+| `waiting for reproduction` | Unable to reproduce without more information |
+| `waiting-response` | Awaiting user response |
+| `confirmed` | A core team member has reproduced this issue |
+| `explained` | Root cause described in the issue |
+
+### Resolution Labels
+
+| Label | Description |
+|-------|-------------|
+| `working as designed` | Behavior is intended, closed as explained |
+| `not reproducible` | Could not generate a reproduction case |
+| `duplicate` | Another issue already tracks this problem |
+| `pending project` | Requires a significant project to fix |
+
+### Priority Labels
+
+| Label | Description |
+|-------|-------------|
+| `crash` | Terraform crashes or panics |
+| `regression` | Previously working functionality broken |
+| Milestone assignment | Indicates target release for fix |
+
+### Component Labels
+
+- `backend/*` - State storage backend issues
+- `provisioner/*` - Provisioner issues
+- `terraform-cloud` - HCP Terraform integration
+- `documentation` - Documentation fixes needed
+
+## Handling Stale Issues
+
+### Lack of Response
+
+When issues are labeled `waiting-response` or `waiting for reproduction` for more than 30 days:
+
+1. Team uses judgment to either:
+   - Close the issue with a polite message
+   - Prompt the reporter again
+
+2. If 30 more days pass without response:
+   - Issue is closed
+   - Message invites future submission of needed information
+
+<Note>
+  This process helps the team and community contributors find actionable bug reports.
+</Note>
+
+## Filing a Good Bug Report
+
+To help your bug report move quickly through triage:
+
+### Include All Information
+
+- **Terraform version**: Output of `terraform version`
+- **Operating system**: OS and version
+- **Terraform configuration**: Complete, minimal reproduction case
+- **Expected behavior**: What should happen
+- **Actual behavior**: What actually happens
+- **Steps to reproduce**: Clear, numbered steps
+- **Additional context**: Relevant logs, screenshots, or environment details
+
+### Use the Issue Template
+
+The bug report template requests all necessary information. Fill in every section.
+
+### Provide Minimal Reproduction
+
+Create the smallest possible configuration that demonstrates the issue:
+
+```hcl
+# Good: Minimal example
+resource "null_resource" "example" {
+  triggers = {
+    timestamp = timestamp()
+  }
+}
+
+# Bad: Complete production configuration with 50 resources
+```
+
+### Check for Duplicates
+
+Search existing issues before filing a new one. If you find a duplicate:
+- Add a 👍 reaction to the original issue
+- Comment only if you have new information
+- Don't create a new issue
+
+### Test on Latest Version
+
+Verify the bug exists on the latest Terraform release. Bugs in old versions may already be fixed.
+
+## What to Avoid
+
+<Warning>
+  **Don't ask for help**: Use [HashiCorp Discuss](https://discuss.hashicorp.com/c/terraform-core/27) for usage questions.
+</Warning>
+
+<Warning>
+  **Don't report provider issues**: Report these in the provider's repository, not Terraform Core.
+</Warning>
+
+<Warning>
+  **Don't bump issues**: Commenting "any update?" doesn't help and creates noise. Use 👍 reactions instead.
+</Warning>
+
+## Milestones
+
+### Milestone Naming
+
+- **X.Y.x**: Issues to be fixed during that minor release lifecycle
+- **X.Y.0**: Issues that must be fixed before that major/minor release
+
+Examples:
+- `1.9.x` - Fixed in any 1.9.x patch release before 1.10.0 RC1
+- `1.10.0` - Must be fixed before 1.10.0 RC1 ships
+
+### Milestone Priority
+
+Issues assigned to milestones are considered higher priority than those without milestones.
+
+## Special Categories
+
+### Backend Issues
+
+Backend maintainers are highlighted for participation. See [State Storage Backends](/contributing/overview#state-storage-backends) for maintainer expectations.
+
+### Documentation Issues
+
+Confirmed documentation needs are labeled `documentation` and can be fixed by community contributors.
+
+View [confirmed documentation issues](https://github.com/hashicorp/terraform/issues?q=is%3Aopen+label%3Abug+label%3Adocumentation+label%3Aconfirmed).
+
+### Pending Projects
+
+Some confirmed bugs require significant projects to fix and are labeled `pending project`.
+
+View [issues pending major projects](https://github.com/hashicorp/terraform/issues?q=is%3Aopen+label%3Abug+label%3Aconfirmed+label%3A%22pending+project%22).
+
+## Community Contributions
+
+You can help with bug triage by:
+
+1. **Reproducing issues**: Test reported bugs and comment with your results
+2. **Providing minimal examples**: Help reporters create minimal reproductions
+3. **Identifying duplicates**: Link to existing issues that cover the same bug
+4. **Fixing explained bugs**: Submit PRs for bugs with identified root causes
+
+<Tip>
+  Look for `explained` issues without assigned PRs - these are great opportunities to contribute fixes.
+</Tip>
+
+## Maintainer Involvement
+
+For code with listed maintainers in [CODEOWNERS](https://github.com/hashicorp/terraform/blob/main/CODEOWNERS):
+
+- Maintainers are highlighted on relevant PRs
+- Expected to review code before core team merges
+- No guaranteed response time (maintainers may be unavailable)
+- Community members can volunteer as maintainers
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Report a Bug" icon="bug" href="https://github.com/hashicorp/terraform/issues/new/choose">
+    File a new bug report with the issue template
+  </Card>
+  <Card title="Pull Requests" icon="code-pull-request" href="/contributing/pull-requests">
+    Learn how to submit fixes for confirmed bugs
+  </Card>
+  <Card title="Contributing Overview" icon="book" href="/contributing/overview">
+    Read the full contributing guidelines
+  </Card>
+</CardGroup>

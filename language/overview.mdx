@@ -1,0 +1,205 @@
+---
+title: Configuration Language Overview
+description: Learn about Terraform's HashiCorp Configuration Language (HCL) for defining infrastructure as code.
+---
+
+# Configuration Language Overview
+
+Terraform uses the HashiCorp Configuration Language (HCL) to define infrastructure as code. HCL is a declarative language designed to be both human-readable and machine-friendly, making it ideal for describing infrastructure resources and their relationships.
+
+## What is the Terraform Language?
+
+The Terraform language is the primary interface for interacting with Terraform. It allows you to:
+
+- **Declare resources** - Define the infrastructure components you want to create
+- **Configure providers** - Specify the cloud platforms and services to use
+- **Manage dependencies** - Control the order of resource creation
+- **Use variables** - Make configurations reusable and flexible
+- **Generate outputs** - Export values for use by other configurations
+- **Organize code** - Structure configurations using modules
+
+## Language Structure
+
+Terraform configurations are written in files with the `.tf` extension. The language consists of:
+
+### Blocks
+
+Blocks are containers for configuration. Each block has a type and may have labels:
+
+```hcl
+resource "aws_instance" "example" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+}
+```
+
+### Arguments
+
+Arguments assign values to names within blocks:
+
+```hcl
+ami = "ami-12345678"
+```
+
+### Expressions
+
+Expressions represent values, either literally or by referencing other values:
+
+```hcl
+ami           = var.ami_id
+instance_type = local.instance_type
+tags          = merge(var.common_tags, { Name = "example" })
+```
+
+## File Structure
+
+Terraform loads all `.tf` files in the current directory when you run commands. A typical configuration includes:
+
+- **main.tf** - Primary resource definitions
+- **variables.tf** - Input variable declarations
+- **outputs.tf** - Output value declarations
+- **providers.tf** - Provider configurations
+- **terraform.tfvars** - Variable value assignments
+
+<Note>
+File names don't affect functionality - Terraform treats all `.tf` files equally. File organization is purely for human readability.
+</Note>
+
+## Core Concepts
+
+### Resources
+
+Resources are the most important element. Each resource block describes one or more infrastructure objects:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-12345678"
+  instance_type = "t2.micro"
+  
+  tags = {
+    Name = "WebServer"
+  }
+}
+```
+
+### Data Sources
+
+Data sources allow you to fetch information from external sources:
+
+```hcl
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"]
+  
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  }
+}
+```
+
+### Variables
+
+Variables make configurations flexible and reusable:
+
+```hcl
+variable "instance_type" {
+  description = "EC2 instance type"
+  type        = string
+  default     = "t2.micro"
+}
+```
+
+### Outputs
+
+Outputs expose values for external use:
+
+```hcl
+output "instance_ip" {
+  value       = aws_instance.web.public_ip
+  description = "Public IP address of the web server"
+}
+```
+
+## Language Features
+
+### Type System
+
+Terraform has a rich type system:
+
+- **Primitive types**: `string`, `number`, `bool`
+- **Collection types**: `list`, `map`, `set`
+- **Structural types**: `object`, `tuple`
+
+### Meta-Arguments
+
+Special arguments that work with any resource:
+
+- `count` - Create multiple instances
+- `for_each` - Create instances from a map or set
+- `depends_on` - Explicit dependencies
+- `provider` - Select a provider configuration
+- `lifecycle` - Customize resource behavior
+
+### Functions
+
+Built-in functions for data transformation:
+
+```hcl
+locals {
+  uppercase_name = upper(var.name)
+  merged_tags    = merge(var.common_tags, var.specific_tags)
+  subnet_count   = length(var.subnets)
+}
+```
+
+## Comments
+
+Terraform supports three comment styles:
+
+```hcl
+# Single line comment
+
+// Alternative single line comment
+
+/*
+  Multi-line
+  comment block
+*/
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Consistent Naming" icon="tag">
+    Follow a consistent naming convention for resources, variables, and outputs.
+  </Card>
+  
+  <Card title="Organize by Purpose" icon="folder">
+    Group related resources together and use modules for reusable components.
+  </Card>
+  
+  <Card title="Document Your Code" icon="book">
+    Add descriptions to variables and outputs, and use comments for complex logic.
+  </Card>
+  
+  <Card title="Validate Input" icon="shield-check">
+    Use variable validation rules to catch errors early.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Syntax" href="/language/syntax" icon="code">
+    Learn the detailed syntax rules
+  </Card>
+  
+  <Card title="Resources" href="/language/resources" icon="server">
+    Define infrastructure resources
+  </Card>
+  
+  <Card title="Variables" href="/language/variables" icon="input-text">
+    Make configurations flexible
+  </Card>
+</CardGroup>

@@ -1,0 +1,323 @@
+---
+title: Azure Backend  
+description: Store Terraform state in Azure Blob Storage.
+---
+
+# Azure Backend
+
+The **Azure** backend stores state as a blob in Azure Blob Storage with optional blob snapshotting and state locking.
+
+## Implementation
+
+Location: `/internal/backend/remote-state/azure/backend.go`
+
+## Use Cases
+
+- Managing Azure infrastructure
+- Team collaboration on Azure projects
+- Integration with Azure DevOps pipelines
+- Compliance requirements for Azure data residency
+
+## Basic Configuration
+
+```hcl
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "StorageAccount-ResourceGroup"
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+  }
+}
+```
+
+## Required Configuration
+
+### storage_account_name
+- **Type:** String
+- **Required:** Yes
+- **Description:** The name of the Azure Storage Account
+
+### container_name
+- **Type:** String
+- **Required:** Yes
+- **Description:** The name of the blob container within the Storage Account
+
+### key
+- **Type:** String
+- **Required:** Yes
+- **Description:** The name of the blob used to store the Terraform state
+
+## Optional Configuration
+
+### resource_group_name
+- **Type:** String
+- **Optional:** Yes
+- **Description:** The Resource Group where the Storage Account is located
+- **Note:** Required if using access key lookup or `lookup_blob_endpoint`
+
+### subscription_id
+- **Type:** String
+- **Optional:** Yes
+- **Environment Variable:** `ARM_SUBSCRIPTION_ID`
+- **Description:** The Subscription ID where the Storage Account is located
+
+### lookup_blob_endpoint
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `false`
+- **Environment Variable:** `ARM_USE_DNS_ZONE_ENDPOINT`
+- **Description:** Whether to look up the storage account blob endpoint (necessary for Azure DNS zone endpoints)
+
+### snapshot
+- **Type:** Boolean
+- **Optional:** Yes
+- **Default:** `false`
+- **Environment Variable:** `ARM_SNAPSHOT`
+- **Description:** Whether to enable automatic blob snapshotting
+
+## Authentication Methods
+
+The Azure backend supports multiple authentication methods:
+
+### 1. Storage Access Key
+
+```hcl
+terraform {
+  backend "azurerm" {
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    access_key           = "<storage-access-key>"
+  }
+}
+```
+
+**Environment Variable:** `ARM_ACCESS_KEY`
+
+### 2. SAS Token
+
+```hcl
+terraform {
+  backend "azurerm" {
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    sas_token            = "<sas-token>"
+  }
+}
+```
+
+**Environment Variable:** `ARM_SAS_TOKEN`
+
+### 3. Azure Active Directory (Service Principal)
+
+#### Client Secret
+
+```hcl
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "StorageAccount-ResourceGroup"
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    
+    tenant_id       = "00000000-0000-0000-0000-000000000000"
+    client_id       = "00000000-0000-0000-0000-000000000000"
+    client_secret   = "<client-secret>"
+    use_azuread_auth = true
+  }
+}
+```
+
+**Environment Variables:**
+- `ARM_TENANT_ID`
+- `ARM_CLIENT_ID`
+- `ARM_CLIENT_SECRET`
+- `ARM_USE_AZUREAD`
+
+#### Client Certificate
+
+```hcl
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "StorageAccount-ResourceGroup"
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    
+    tenant_id                   = "00000000-0000-0000-0000-000000000000"
+    client_id                   = "00000000-0000-0000-0000-000000000000"
+    client_certificate_path     = "/path/to/certificate.pfx"
+    client_certificate_password = "<certificate-password>"
+    use_azuread_auth            = true
+  }
+}
+```
+
+**Environment Variables:**
+- `ARM_CLIENT_CERTIFICATE_PATH`
+- `ARM_CLIENT_CERTIFICATE_PASSWORD`
+- `ARM_CLIENT_CERTIFICATE` (base64-encoded PKCS#12)
+
+### 4. OpenID Connect (OIDC)
+
+```hcl
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "StorageAccount-ResourceGroup"
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    
+    tenant_id        = "00000000-0000-0000-0000-000000000000"
+    client_id        = "00000000-0000-0000-0000-000000000000"
+    use_oidc         = true
+    oidc_token_file_path = "/path/to/oidc-token"
+    use_azuread_auth = true
+  }
+}
+```
+
+**OIDC Configuration:**
+
+- **use_oidc** - Enable OIDC authentication
+- **oidc_token** - OIDC ID token
+- **oidc_token_file_path** - Path to OIDC token file
+- **oidc_request_token** - Bearer token for OIDC provider request
+- **oidc_request_url** - URL for OIDC provider
+
+**Azure DevOps:**
+- **ado_pipeline_service_connection_id** - Azure DevOps service connection ID
+
+**Environment Variables:**
+- `ARM_USE_OIDC`
+- `ARM_OIDC_TOKEN`
+- `ARM_OIDC_TOKEN_FILE_PATH`
+- `ARM_OIDC_REQUEST_TOKEN` / `ACTIONS_ID_TOKEN_REQUEST_TOKEN` / `SYSTEM_ACCESSTOKEN`
+- `ARM_OIDC_REQUEST_URL` / `ACTIONS_ID_TOKEN_REQUEST_URL` / `SYSTEM_OIDCREQUESTURI`
+
+### 5. Managed Identity
+
+```hcl
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "StorageAccount-ResourceGroup"
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    
+    use_msi          = true
+    use_azuread_auth = true
+  }
+}
+```
+
+**Environment Variables:**
+- `ARM_USE_MSI`
+- `ARM_MSI_ENDPOINT` (custom endpoint)
+
+### 6. Azure CLI
+
+```hcl
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "StorageAccount-ResourceGroup"
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    
+    use_cli          = true
+    use_azuread_auth = true
+  }
+}
+```
+
+**Environment Variable:** `ARM_USE_CLI` (defaults to `true`)
+
+### 7. AKS Workload Identity
+
+```hcl
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "StorageAccount-ResourceGroup"
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    
+    use_aks_workload_identity = true
+    use_azuread_auth          = true
+  }
+}
+```
+
+**Environment Variable:** `ARM_USE_AKS_WORKLOAD_IDENTITY`
+
+## Cloud Environments
+
+### environment
+- **Type:** String
+- **Optional:** Yes
+- **Default:** `"public"`
+- **Environment Variable:** `ARM_ENVIRONMENT`
+- **Valid Values:** `public`, `usgovernment`, `china`
+- **Description:** The Azure cloud environment
+
+```hcl
+terraform {
+  backend "azurerm" {
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    environment          = "usgovernment"
+  }
+}
+```
+
+### metadata_host
+- **Type:** String
+- **Optional:** Yes
+- **Environment Variables:** `ARM_METADATA_HOSTNAME`, `ARM_METADATA_HOST`
+- **Description:** Hostname for Azure Metadata Service (custom cloud environments)
+
+**Note:** Do not specify `environment` when using `metadata_host`.
+
+## State Locking
+
+The Azure backend uses blob leases for state locking. Locking is automatic and enabled by default when multiple users access the same state file.
+
+## Blob Snapshots
+
+Enable automatic blob snapshotting to maintain state history:
+
+```hcl
+terraform {
+  backend "azurerm" {
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+    snapshot             = true
+  }
+}
+```
+
+## Example: Complete Configuration
+
+```hcl
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "terraform-state-rg"
+    storage_account_name = "terraformstate12345"
+    container_name       = "tfstate"
+    key                  = "production.terraform.tfstate"
+    
+    subscription_id = "00000000-0000-0000-0000-000000000000"
+    tenant_id       = "00000000-0000-0000-0000-000000000000"
+    
+    snapshot             = true
+    use_azuread_auth     = true
+    use_msi              = true
+    lookup_blob_endpoint = true
+  }
+}
+```

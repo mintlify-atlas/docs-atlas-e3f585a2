@@ -1,0 +1,357 @@
+---
+title: State Backends
+description: Understanding Terraform's backend system for state storage and workspace management
+---
+
+## Overview
+
+Backends in Terraform determine where and how state is loaded, stored, and managed. They provide the abstraction that allows Terraform to support both local and remote operations seamlessly.
+
+## Backend Interface
+
+The core backend interface is defined in `internal/backend/backend.go`:
+
+```go
+// From internal/backend/backend.go:44
+type Backend interface {
+    // ConfigSchema returns expected configuration structure
+    ConfigSchema() *configschema.Block
+    
+    // PrepareConfig validates and normalizes configuration
+    PrepareConfig(cty.Value) (cty.Value, tfdiags.Diagnostics)
+    
+    // Configure sets up the backend with provided configuration
+    Configure(cty.Value) tfdiags.Diagnostics
+    
+    // StateMgr returns state manager for a workspace
+    StateMgr(workspace string) (statemgr.Full, tfdiags.Diagnostics)
+    
+    // DeleteWorkspace removes a workspace
+    DeleteWorkspace(name string, force bool) tfdiags.Diagnostics
+    
+    // Workspaces returns list of all workspaces
+    Workspaces() ([]string, tfdiags.Diagnostics)
+}
+```
+
+**Reference**: `internal/backend/backend.go:44-106`
+
+## Backend Lifecycle
+
+### 1. Configuration Schema
+
+Backends expose their configuration requirements through a schema:
+
+```go
+schema := backend.ConfigSchema()
+```
+
+This returns a `configschema.Block` describing the expected configuration structure.
+
+**Reference**: `internal/backend/backend.go:47-50`
+
+### 2. Configuration Preparation
+
+Before configuration is applied, it must be validated and normalized:
+
+```go
+preparedConfig, diags := backend.PrepareConfig(rawConfig)
+```
+
+This method:
+- Validates configuration structure
+- Inserts missing defaults
+- Does NOT access external data (env vars, disk files)
+- Must be called before `Configure()`
+
+**Reference**: `internal/backend/backend.go:52-70`
+
+### 3. Backend Configuration
+
+Once validated, the backend is configured:
+
+```go
+diags := backend.Configure(preparedConfig)
+```
+
+<Warning>
+This method may only be called once per backend instance. After configuration, the backend is ready for state operations.
+</Warning>
+
+**Reference**: `internal/backend/backend.go:72-84`
+
+## Workspace Management
+
+### Default Workspace
+
+Every backend must support a default workspace:
+
+```go
+// From internal/backend/backend.go:21
+const DefaultStateName = "default"
+```
+
+The default workspace cannot be deleted.
+
+**Reference**: `internal/backend/backend.go:21-22`
+
+### Multiple Workspaces
+
+Some backends support multiple named workspaces:
+
+```go
+// List all workspaces
+workspaces, diags := backend.Workspaces()
+
+// Get state manager for specific workspace
+stateMgr, diags := backend.StateMgr("production")
+```
+
+**Reference**: `internal/backend/backend.go:103-105`
+
+### Workspace Errors
+
+Backends may return specific errors:
+
+```go
+// From internal/backend/backend.go:24
+var (
+    // Workspace operations not supported
+    ErrWorkspacesNotSupported = errors.New("workspaces not supported")
+    
+    // Default workspace cannot be used for this operation
+    ErrDefaultWorkspaceNotSupported = errors.New("default workspace not supported")
+)
+```
+
+**Reference**: `internal/backend/backend.go:24-38`
+
+## State Manager
+
+The `StateMgr` method returns a state manager implementing `statemgr.Full`:
+
+```go
+stateMgr, diags := backend.StateMgr(workspace)
+```
+
+### State Manager Responsibilities
+
+- **Create on Demand**: If workspace doesn't exist, it will be created
+- **Locking**: If the state manager implements `statemgr.Locker`, caller must handle locking
+- **Persistence**: State manager handles reading and writing state
+
+**Reference**: `internal/backend/backend.go:86-94`
+
+## Workspace Operations
+
+### Deleting Workspaces
+
+```go
+diags := backend.DeleteWorkspace("staging", force)
+```
+
+<Warning>
+DeleteWorkspace cannot prevent deleting a state that is in use. The caller is responsible for holding a lock before deletion.
+</Warning>
+
+Parameters:
+- `name`: Workspace name to delete
+- `force`: Whether to force deletion of non-empty workspace
+
+**Reference**: `internal/backend/backend.go:96-101`
+
+## Backend Types
+
+### Local Backends
+
+Local backends store state on the local filesystem or in memory. They are used for:
+- Development environments
+- Single-user workflows
+- Testing
+
+### Remote Backends
+
+Remote backends store state in a remote location:
+- Cloud storage (S3, Azure Blob, GCS)
+- HashiCorp Terraform Cloud
+- Consul
+- etcd
+
+Remote backends enable:
+- Team collaboration
+- State locking
+- Remote operations
+- State versioning
+
+## Backend Initialization
+
+Backends are initialized through an initialization function:
+
+```go
+// From internal/backend/backend.go:41
+type InitFn func() Backend
+```
+
+This function pattern allows backends to be registered and created dynamically.
+
+**Reference**: `internal/backend/backend.go:41`
+
+## Enhanced Backends
+
+Some backends provide enhanced functionality beyond basic state storage:
+
+### Local Operations
+
+The `backendrun.Local` interface extends `Backend` to support local execution:
+
+```go
+local, ok := backend.(backendrun.Local)
+if ok {
+    // Backend supports local operations like plan and apply
+}
+```
+
+This is required for operations like `terraform import`.
+
+**Reference**: `internal/command/import.go:166-170`
+
+### Remote Operations
+
+Some backends can execute operations remotely:
+- Terraform Cloud/Enterprise
+- Custom remote execution backends
+
+## Backend Configuration Example
+
+### Local Backend
+
+```hcl
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+}
+```
+
+### S3 Backend
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "prod/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "terraform-locks"
+  }
+}
+```
+
+### Terraform Cloud Backend
+
+```hcl
+terraform {
+  cloud {
+    organization = "my-org"
+    
+    workspaces {
+      name = "production"
+    }
+  }
+}
+```
+
+## Backend Migration
+
+When changing backends, Terraform can migrate state:
+
+1. Update backend configuration
+2. Run `terraform init`
+3. Terraform detects backend change
+4. Prompts to migrate state
+5. Copies state to new backend
+
+<Note>
+Always backup your state before migrating backends. The old backend state remains unchanged until you confirm the migration.
+</Note>
+
+## State Locking Support
+
+Not all backends support state locking. Check backend documentation:
+
+- **With Locking**: S3 (with DynamoDB), Terraform Cloud, Consul, etcd
+- **Without Locking**: Local (basic), HTTP, artifactory
+
+For backends without native locking, consider using the local backend with a custom locking mechanism.
+
+## Backend State Encryption
+
+Many backends support state encryption:
+
+### At-Rest Encryption
+
+- S3: Server-side encryption (SSE)
+- Azure Blob: Storage Service Encryption
+- GCS: Default encryption
+- Terraform Cloud: Encrypted by default
+
+### In-Transit Encryption
+
+All remote backends should use HTTPS/TLS for data transmission.
+
+<Warning>
+Terraform state may contain sensitive data. Always enable encryption for production environments.
+</Warning>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Remote Backends for Teams">
+    Always use remote backends with locking support for team environments to prevent concurrent modifications.
+  </Accordion>
+  
+  <Accordion title="Enable State Encryption">
+    Enable encryption at rest and in transit for all production backends.
+  </Accordion>
+  
+  <Accordion title="Version Your State">
+    Use backends that support state versioning (S3 with versioning, Terraform Cloud) to enable rollback capabilities.
+  </Accordion>
+  
+  <Accordion title="Backup State Regularly">
+    Even with versioning, maintain separate backups of your state files.
+  </Accordion>
+  
+  <Accordion title="Separate Environments">
+    Use different backends or workspaces for different environments (dev, staging, production).
+  </Accordion>
+  
+  <Accordion title="Document Backend Configuration">
+    Keep backend configuration in version control and document access requirements.
+  </Accordion>
+</AccordionGroup>
+
+## Workspace vs Environment
+
+Workspaces and environments serve different purposes:
+
+- **Workspaces**: Multiple named state files within the same backend
+- **Environments**: Completely separate infrastructure (often different backends)
+
+<Note>
+Workspaces are best for variations of the same infrastructure. Use separate backends for truly isolated environments.
+</Note>
+
+## Related Resources
+
+- [State Overview](/state/overview) - Core state concepts and data structures
+- [State Locking](/state/locking) - Detailed locking mechanisms
+- [Remote State](/state/remote-state) - Using remote state data sources
+- [State Manipulation](/state/manipulation) - State command reference
+
+## Source Code References
+
+- **Backend Interface**: `internal/backend/backend.go`
+- **Local Backend**: `internal/backend/local/`
+- **Backend Run**: `internal/backend/backendrun/`
+- **State Manager**: `internal/states/statemgr/`

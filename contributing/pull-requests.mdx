@@ -1,0 +1,411 @@
+---
+title: Pull Request Guidelines
+description: Learn the pull request lifecycle, changelog requirements, and best practices for getting your contributions merged into Terraform.
+---
+
+## Before You Start
+
+<Warning>
+  **Discuss first!** Before investing significant development time, discuss your proposed solution with the Terraform team on a GitHub issue. This ensures your approach aligns with project goals and avoids wasted effort.
+</Warning>
+
+See [Proposing Changes](/contributing/overview#proposing-changes) for the full discussion process.
+
+## Pull Request Lifecycle
+
+### 1. Draft Pull Request (Optional)
+
+Submit a [draft pull request](https://github.blog/2019-02-14-introducing-draft-pull-requests/) for early feedback:
+
+- Get commentary before completion
+- Ask specific questions
+- Request feedback on particular approaches
+
+### 2. Create Pull Request
+
+Once ready for review:
+
+1. Ensure all tests pass locally
+2. Add changelog entry if user-facing (see below)
+3. Fill out the PR template completely
+4. Request review (don't target specific team members)
+
+### 3. Code Review
+
+The Terraform team will review when time permits:
+
+- May ask questions about your approach
+- May request changes
+- May suggest alternative implementations
+
+<Info>
+  View pull requests as a collaboration opportunity. The team welcomes conversations about how to improve code.
+</Info>
+
+### 4. Address Feedback
+
+You can either:
+
+- Make requested changes
+- Discuss alternative approaches if you disagree
+- Have a conversation to agree on a path forward
+
+<Note>
+  It's the contributor's responsibility to address requested changes. While reviewers provide guidance, they cannot perform the coding work to get PRs mergeable.
+</Note>
+
+### 5. Merge
+
+Once approved:
+
+- Your PR will be merged
+- The core team updates the main CHANGELOG.md
+- Your change may or may not be included in the next release depending on whether it's breaking
+
+### 6. Possible Closure
+
+Sometimes PRs are closed without merging:
+
+- Clear reasoning will be provided
+- Following the recommended process reduces this likelihood
+
+## Changelog Requirements
+
+### User-Facing Changes
+
+If your PR changes user-visible behavior, add a changelog entry.
+
+### Non-User-Facing Changes
+
+If your changes are internal only (refactoring, tests, etc.), add the `no-changelog-needed` label.
+
+<Warning>
+  A GitHub Action will prompt you if your PR lacks both a changelog entry and the `no-changelog-needed` label.
+</Warning>
+
+## Creating Changelog Entries
+
+### Using changie
+
+Use the `changie` tool interactively:
+
+```bash
+npx changie new
+```
+
+The command will prompt you for:
+
+1. **Change kind**: Select the appropriate category
+2. **Description**: Short description of the change
+3. **Issue/PR number**: The GitHub issue or PR number
+
+### Change Kinds
+
+| Kind | When to Use |
+|------|-------------|
+| **NEW FEATURES** | New, separate functionality added to Terraform (e.g., ephemeral resources) |
+| **ENHANCEMENTS** | Improvements to existing functionality (e.g., new backend field, new environment variable) |
+| **BUG FIXES** | User-facing bug fixes (e.g., crash fixes, improved errors, regression fixes) |
+| **NOTES** | Changes unlikely to cause issues but might have edge cases (e.g., binary build changes) |
+| **UPGRADE NOTES** | Changes requiring user action when upgrading or notable behavior changes (e.g., deprecating a backend field) |
+| **BREAKING CHANGES** | Changes that could break valid configurations (e.g., removing a backend field, changing function behavior, stricter validation) |
+
+### Changelog File Location
+
+Place changelog files in the `.changes/v1.XX/` folder matching the version in [version/VERSION](https://github.com/hashicorp/terraform/blob/main/version/VERSION).
+
+**Exception**: For backported changes, use the `.changes/v1.XX/` folder for the earliest backport version.
+
+Example: If a PR is labeled `1.11-backport` and `1.10-backport`, create the changelog file in `.changes/v1.10/` only.
+
+## Backporting PRs
+
+PRs can be backported to previous releases for patch releases.
+
+### How to Request Backport
+
+Add [backport labels](https://github.com/hashicorp/terraform/labels?q=backport) to your PR:
+
+- `1.9-backport`
+- `1.10-backport`
+- etc.
+
+### What Happens
+
+The PR reviewer will ensure the PR is merged into:
+- The `main` branch
+- All labeled release branches
+
+<Info>
+  Backports are typically used for bug fixes and critical patches, not new features.
+</Info>
+
+## Getting PRs Merged Faster
+
+### 1. Well-Documented
+
+Explain in the PR description:
+
+- **What**: What does your change do?
+- **Why**: Why did you make this change?
+- **How**: How can reviewers test the new behavior?
+
+Include:
+- Screenshots or terminal output
+- Before/after comparisons
+- Example configurations
+
+### 2. Small and Focused
+
+<Tip>
+  Make one change per pull request. If you fixed two bugs, submit two separate PRs.
+</Tip>
+
+Benefits of small PRs:
+- Easier for reviewers to understand implications
+- Requires less effort and energy to review
+- Gets reviewed and merged sooner
+
+### 3. Passing Tests
+
+Ensure all tests pass before requesting review:
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests for changed packages
+go test ./internal/command/...
+```
+
+<Warning>
+  The team may not review PRs with failing tests. If you need help understanding test failures, ask, but passing tests is generally your responsibility.
+</Warning>
+
+If your PR changes interfaces or invalidates assumptions:
+- Fix all affected tests
+- Update tests to match new behavior
+- Explain why test changes are necessary
+
+### 4. Timely Responses
+
+When the team requests changes:
+- Respond promptly
+- Make requested changes in a timely manner
+- Stale PRs require more work to merge later
+
+## PR Checks
+
+Automated checks run on every PR:
+
+### Contributor License Agreement (CLA)
+
+First-time contributors must sign the CLA.
+
+### Tests
+
+- Unit tests
+- Acceptance tests (when `TF_ACC=1`)
+- All tests must pass before merging
+
+### Change Files
+
+Automation verifies:
+- PRs with `no-changelog-needed` label don't need changelog files
+- PRs without the label include appropriate changelog files
+
+### Vercel
+
+<Info>
+  This is an internal tool that doesn't run correctly for external contributors. The team works around this - you can ignore failures.
+</Info>
+
+## PR Best Practices
+
+### Commit Messages
+
+Write clear commit messages:
+
+```bash
+# Good
+Add validation for resource names in module calls
+
+Resource names in module calls need to be validated to ensure
+they don't contain invalid characters that could cause issues
+during plan and apply operations.
+
+# Bad
+Fix bug
+```
+
+### Code Comments
+
+Add comments explaining:
+- **Why**: The reasoning behind non-obvious decisions
+- **Not what**: Don't explain what the code does (that should be clear)
+
+### Tests
+
+Include tests that:
+- Cover the bug you fixed
+- Cover the feature you added
+- Cover edge cases
+- Are readable and maintainable
+
+See [Testing](/contributing/testing) for details.
+
+### Documentation
+
+Update documentation if your change:
+- Adds new functionality
+- Changes existing behavior
+- Deprecates features
+- Adds configuration options
+
+## AI Usage in Contributions
+
+If using AI tools to assist with your contribution, follow these principles:
+
+### Transparency
+
+Disclose AI usage in your PR description:
+
+```markdown
+## AI Usage
+
+Used GitHub Copilot to generate boilerplate for the new validation function.
+```
+
+Be specific about what role AI played.
+
+### Accountability
+
+<Warning>
+  You are fully responsible for all code submitted, regardless of how it was generated. All PRs must come from real, human-owned accounts.
+</Warning>
+
+- **Human review**: Review every line of AI-generated code
+- **Deep understanding**: Be able to explain all code in your own words
+- **Human ownership**: Understand logic, implications, and side effects
+
+### Quality
+
+<Tip>
+  Use AI to assist your process, not automate final decisions. AI can generate plausible but incorrect or dangerous code.
+</Tip>
+
+- Verify AI output for correctness
+- Adhere to Terraform's style guidelines
+- Ensure thoughtful architecture
+- Avoid low-effort, copy-pasted submissions
+
+## Communication Tips
+
+### Be Patient
+
+<Info>
+  The Terraform team cannot always respond promptly to PRs, especially those not related to existing issues where the team has already participated.
+</Info>
+
+- Reviews take time
+- Back-and-forth is normal
+- The team appreciates your patience and effort
+
+### Don't Target Specific Team Members
+
+Kindly avoid:
+- @mentioning specific team members
+- Requesting review from individuals
+
+The team will review when capacity allows.
+
+### Be Respectful
+
+All communication is subject to [HashiCorp community guidelines](https://www.hashicorp.com/community-guidelines):
+
+- Be respectful and professional
+- Assume good intent
+- Focus on technical merits
+- Welcome feedback and learning opportunities
+
+## After Your PR is Merged
+
+### Release Inclusion
+
+Your change may appear in:
+- The next minor release (X.Y.0)
+- A patch release (X.Y.Z)
+- A later release if it's considered breaking
+
+### Release Notes
+
+The core team:
+- Compiles changelog entries into release notes
+- Updates the main CHANGELOG.md
+- Includes your contribution in release announcements
+
+### Recognition
+
+Contributors are recognized:
+- In git commit history
+- In PR merge messages
+- In release notes (for significant contributions)
+
+## Example PR Description
+
+```markdown
+## Description
+
+Adds validation to prevent invalid characters in resource names within module calls.
+
+## Motivation
+
+Users can currently create module calls with resource names containing spaces
+and special characters, which causes cryptic errors during plan/apply. This
+change provides early validation with clear error messages.
+
+Fixes #12345
+
+## Testing
+
+- Added unit tests for validation logic
+- Added integration test with invalid resource names
+- Manually tested with example configurations
+
+## Screenshots
+
+### Before
+```
+Error: invalid resource reference
+```
+
+### After
+```
+Error: Invalid resource name "my resource": resource names may only contain
+letters, numbers, underscores, and hyphens.
+```
+
+## Checklist
+
+- [x] Tests pass locally
+- [x] Added changelog entry
+- [x] Updated documentation
+- [x] Followed code style guidelines
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Code Style" icon="code" href="/contributing/code-style">
+    Ensure your PR follows style guidelines
+  </Card>
+  <Card title="Testing" icon="flask" href="/contributing/testing">
+    Write tests for your changes
+  </Card>
+  <Card title="Bug Reports" icon="bug" href="/contributing/bug-reports">
+    Understand the bug triage process
+  </Card>
+  <Card title="Contributing Overview" icon="book" href="/contributing/overview">
+    Review the full contributing guidelines
+  </Card>
+</CardGroup>

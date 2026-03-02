@@ -1,0 +1,82 @@
+---
+title: terraform force-unlock
+description: The terraform force-unlock command manually unlocks the state for the defined configuration.
+---
+
+# Command: force-unlock
+
+The `terraform force-unlock` command manually unlocks the state for the defined configuration.
+
+## Usage
+
+```bash
+terraform force-unlock [options] LOCK_ID
+```
+
+Manually unlock the state for the defined configuration. This will not modify your infrastructure. This command removes the lock on the state for the current workspace. The behavior of this lock is dependent on the backend being used.
+
+<Warning>
+Local state files cannot be unlocked by another process.
+</Warning>
+
+The `LOCK_ID` is the unique ID output when Terraform acquires the lock. You can find this ID in the error message when another process holds the lock:
+
+```
+Error: Error acquiring the state lock
+
+Error message: ConditionalCheckFailedException: The conditional request failed
+Lock Info:
+  ID:        a1b2c3d4-1234-5678-90ab-abcdefghijkl
+  Path:      example-bucket/terraform.tfstate
+  Operation: OperationTypeApply
+  Who:       user@hostname
+  Version:   1.7.0
+  Created:   2024-01-15 10:30:45.123456789 +0000 UTC
+  Info:
+```
+
+In this example, the `LOCK_ID` is `a1b2c3d4-1234-5678-90ab-abcdefghijkl`.
+
+## Options
+
+- `-force` - Don't ask for input for unlock confirmation. Use with caution.
+
+## When to Use
+
+Use `terraform force-unlock` when:
+
+- A Terraform command was interrupted (for example, by killing the process or a network failure)
+- The lock has become stuck and is preventing you from running Terraform commands
+- You are certain that no other Terraform processes are running
+
+<Warning>
+Be very careful with this command. If you force-unlock state while another process is actively using it, you may corrupt your state file or cause unexpected behavior.
+</Warning>
+
+## Confirmation Prompt
+
+Unless the `-force` flag is specified, Terraform will prompt you for confirmation before unlocking:
+
+```bash
+$ terraform force-unlock a1b2c3d4-1234-5678-90ab-abcdefghijkl
+Do you really want to force-unlock?
+  Terraform will remove the lock on the remote state.
+  This will allow local Terraform commands to modify this state, even though it
+  may still be in use. Only 'yes' will be accepted to confirm.
+
+  Enter a value: yes
+```
+
+## Example
+
+Unlock state with confirmation prompt:
+
+```bash
+terraform force-unlock a1b2c3d4-1234-5678-90ab-abcdefghijkl
+```
+
+Unlock state without confirmation:
+
+```bash
+terraform force-unlock -force a1b2c3d4-1234-5678-90ab-abcdefghijkl
+```

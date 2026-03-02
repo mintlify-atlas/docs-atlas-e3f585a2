@@ -1,0 +1,616 @@
+---
+title: State Manipulation Commands
+description: Reference for Terraform state manipulation commands - list, show, mv, rm, and advanced operations
+---
+
+## Overview
+
+Terraform provides a suite of commands for inspecting and modifying state. These commands enable advanced workflows like refactoring, resource migration, and troubleshooting.
+
+<Warning>
+State manipulation commands directly modify your state file. Always backup state before performing destructive operations.
+</Warning>
+
+## terraform state list
+
+List all resources in the state file.
+
+### Basic Usage
+
+```bash
+# List all resources
+terraform state list
+
+# Filter by address pattern
+terraform state list aws_instance.web
+terraform state list module.network
+```
+
+### Implementation
+
+From `internal/command/state_list.go`:
+
+```go
+// From internal/command/state_list.go:66
+var addrs []addrs.AbsResourceInstance
+if len(parsedArgs.Addrs) == 0 {
+    addrs, diags = c.lookupAllResourceInstanceAddrs(state)
+} else {
+    addrs, diags = c.lookupResourceInstanceAddrs(state, parsedArgs.Addrs...)
+}
+```
+
+Returns all resource instances, or filters by provided addresses.
+
+**Reference**: `internal/command/state_list.go:22-87`
+
+### Command Options
+
+```bash
+# Use specific state file
+terraform state list -state=custom.tfstate
+
+# Filter by resource ID
+terraform state list -id=i-0123456789abcdef0
+```
+
+**Reference**: `internal/command/state_list.go:111-119`
+
+### Example Output
+
+```
+aws_vpc.main
+aws_subnet.public[0]
+aws_subnet.public[1]
+aws_instance.web
+module.database.aws_db_instance.main
+module.database.aws_db_subnet_group.main
+```
+
+## terraform state show
+
+Display detailed information about a resource in state.
+
+### Basic Usage
+
+```bash
+terraform state show aws_instance.web
+terraform state show 'aws_instance.app[0]'
+terraform state show 'module.vpc.aws_vpc.main'
+```
+
+### Example Output
+
+```hcl
+# aws_instance.web:
+resource "aws_instance" "web" {
+    ami                          = "ami-0c55b159cbfafe1f0"
+    arn                          = "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0"
+    instance_type                = "t2.micro"
+    private_ip                   = "10.0.1.100"
+    # ... more attributes
+}
+```
+
+## terraform state mv
+
+Move resources within state or between state files.
+
+### Basic Usage
+
+```bash
+# Rename a resource
+terraform state mv aws_instance.web aws_instance.app
+
+# Move to module
+terraform state mv aws_instance.web module.compute.aws_instance.web
+
+# Move from module to root
+terraform state mv module.old.aws_instance.web aws_instance.web
+
+# Move between state files
+terraform state mv -state-out=other.tfstate aws_instance.web aws_instance.web
+```
+
+### Implementation Details
+
+From `internal/command/state_mv.go`:
+
+```go
+// From internal/command/state_mv.go:89
+if c.stateLock {
+    stateLocker := clistate.NewLocker(c.stateLockTimeout, views.NewStateLocker(arguments.ViewHuman, c.View))
+    if diags := stateLocker.Lock(stateFromMgr, "state-mv"); diags.HasErrors() {
+        c.showDiagnostics(diags)
+        return 1
+    }
+    defer func() {
+        if diags := stateLocker.Unlock(); diags.HasErrors() {
+            c.showDiagnostics(diags)
+        }
+    }()
+}
+```
+
+State mv acquires locks on both source and destination states.
+
+**Reference**: `internal/command/state_mv.go:89-100`
+
+### Moving Resource Instances
+
+```go
+// From internal/command/state_mv.go:274
+case addrs.AbsResourceInstance:
+    addrTo, ok := destAddr.(addrs.AbsResourceInstance)
+    if !ok {
+        // Can convert AbsResource to AbsResourceInstance with NoKey
+        ra, ok := destAddr.(addrs.AbsResource)
+        if !ok {
+            diags = diags.Append(tfdiags.Sourceless(
+                tfdiags.Error,
+                msgInvalidTarget,
+                fmt.Sprintf("Cannot move %s to %s: the target must also be a resource instance.", addrFrom, destAddr),
+            ))
+            return 1
+        }
+        addrTo = ra.Instance(addrs.NoKey)
+    }
+```
+
+Supports moving both resources and individual instances.
+
+**Reference**: `internal/command/state_mv.go:274-343`
+
+### Move Validation
+
+```go
+// From internal/command/state_mv.go:477
+func (c *StateMvCommand) validateResourceMove(addrFrom, addrTo addrs.AbsResource) tfdiags.Diagnostics {
+    var diags tfdiags.Diagnostics
+    if addrFrom.Resource.Mode != addrTo.Resource.Mode {
+        // Cannot change between managed and data resources
+    }
+    if addrFrom.Resource.Type != addrTo.Resource.Type {
+        // Cannot change resource types
+    }
+    return diags
+}
+```
+
+Move operations validate that resource modes and types match.
+
+**Reference**: `internal/command/state_mv.go:473-508`
+
+### Command Options
+
+```bash
+# Dry run - show what would happen
+terraform state mv -dry-run source destination
+
+# Disable locking
+terraform state mv -lock=false source destination
+
+# Custom lock timeout
+terraform state mv -lock-timeout=5m source destination
+
+# Move to different state file
+terraform state mv -state-out=other.tfstate source destination
+
+# Use custom state paths
+terraform state mv -state=old.tfstate -backup=old.backup source destination
+```
+
+**Reference**: `internal/command/state_mv.go:530-546`
+
+## terraform state rm
+
+Remove resources from state without destroying them.
+
+### Basic Usage
+
+```bash
+# Remove single resource
+terraform state rm aws_instance.web
+
+# Remove resource with count
+terraform state rm 'aws_instance.app[0]'
+
+# Remove entire module
+terraform state rm module.legacy
+
+# Remove multiple resources
+terraform state rm aws_instance.web aws_instance.app
+```
+
+### Implementation
+
+From `internal/command/state_rm.go`:
+
+```go
+// From internal/command/state_rm.go:94
+ss := state.SyncWrapper()
+for _, addr := range addrs {
+    isCount++
+    c.Ui.Output(prefix + addr.String())
+    if !parsedArgs.DryRun {
+        ss.ForgetResourceInstanceAll(addr)
+        ss.RemoveResourceIfEmpty(addr.ContainingResource())
+    }
+}
+```
+
+Resources are removed from state using `SyncState` wrapper for safe concurrent access.
+
+**Reference**: `internal/command/state_rm.go:92-101`
+
+### Forgetting vs Removing
+
+State removal uses "forget" terminology:
+
+```go
+// From internal/states/sync.go:316
+func (s *SyncState) ForgetResourceInstanceAll(addr addrs.AbsResourceInstance) {
+    defer s.beginWrite()()
+    
+    ms := s.state.Module(addr.Module)
+    if ms == nil {
+        return
+    }
+    ms.ForgetResourceInstanceAll(addr.Resource)
+    s.maybePruneModule(addr.Module)
+}
+```
+
+**Reference**: `internal/states/sync.go:316-325`
+
+### Command Options
+
+```bash
+# Dry run - preview removal
+terraform state rm -dry-run aws_instance.web
+
+# Disable locking
+terraform state rm -lock=false aws_instance.web
+
+# Custom backup path
+terraform state rm -backup=custom.backup aws_instance.web
+
+# Use specific state file
+terraform state rm -state=custom.tfstate aws_instance.web
+```
+
+**Reference**: `internal/command/state_rm.go:170-192`
+
+### When to Use State Rm
+
+<AccordionGroup>
+  <Accordion title="Resource Managed Elsewhere">
+    Remove from state when you want another system to manage the resource.
+  </Accordion>
+  
+  <Accordion title="Refactoring Modules">
+    Remove before re-importing into a different module structure.
+  </Accordion>
+  
+  <Accordion title="Orphaned State Entries">
+    Clean up state entries for resources that no longer exist.
+  </Accordion>
+  
+  <Accordion title="Preventing Destruction">
+    Remove from state to prevent `terraform destroy` from deleting the resource.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+Removing resources from state means Terraform will no longer manage them. The actual infrastructure remains unchanged.
+</Warning>
+
+## terraform state pull
+
+Download and output the current state.
+
+### Basic Usage
+
+```bash
+# Output state to stdout
+terraform state pull
+
+# Save to file
+terraform state pull > backup.tfstate
+
+# Pretty print with jq
+terraform state pull | jq .
+```
+
+### Use Cases
+
+- Creating manual backups
+- Inspecting raw state structure
+- State debugging
+- Integration with external tools
+
+## terraform state push
+
+Upload a local state file to the backend.
+
+### Basic Usage
+
+```bash
+terraform state push backup.tfstate
+```
+
+<Warning>
+Pushing state can overwrite remote state. Use with extreme caution and ensure you have backups.
+</Warning>
+
+### Force Push
+
+```bash
+# Override lineage and serial checks
+terraform state push -force backup.tfstate
+```
+
+Force flag bypasses safety checks. Only use when you're certain.
+
+## terraform state replace-provider
+
+Replace provider references in state.
+
+### Basic Usage
+
+```bash
+# Replace provider address
+terraform state replace-provider \
+  registry.terraform.io/hashicorp/aws \
+  registry.terraform.io/hashicorp/aws
+
+# Migrate to custom provider
+terraform state replace-provider \
+  registry.terraform.io/hashicorp/aws \
+  example.com/custom/aws
+```
+
+### When to Use
+
+- Migrating to forked providers
+- Changing provider source after registry migration
+- Fixing provider address mismatches
+
+## Advanced State Operations
+
+### Moving Modules
+
+Move entire modules:
+
+```bash
+# Move module instance
+terraform state mv module.old module.new
+
+# Move nested module
+terraform state mv module.parent.module.child module.relocated
+```
+
+From the implementation:
+
+```go
+// From internal/command/state_mv.go:183
+case addrs.ModuleInstance:
+    search := sourceAddr.(addrs.ModuleInstance)
+    addrTo, ok := destAddr.(addrs.ModuleInstance)
+    if !ok {
+        diags = diags.Append(tfdiags.Sourceless(
+            tfdiags.Error,
+            msgInvalidTarget,
+            fmt.Sprintf("Cannot move %s to %s: the target must also be a module.", addrFrom, destAddr),
+        ))
+        return 1
+    }
+```
+
+**Reference**: `internal/command/state_mv.go:183-227`
+
+### Handling Dependencies
+
+When moving resources, dependencies are cleared:
+
+```go
+// From internal/command/state_mv.go:352
+// Look for any dependencies that may be affected and
+// remove them to ensure they are recreated in full.
+for _, mod := range stateTo.Modules {
+    for _, res := range mod.Resources {
+        for _, ins := range res.Instances {
+            if ins.Current == nil {
+                continue
+            }
+            
+            for _, dep := range ins.Current.Dependencies {
+                if dep.TargetContains(rawAddrFrom) || rawAddrFrom.TargetContains(dep) {
+                    ins.Current.Dependencies = nil
+                    break
+                }
+            }
+        }
+    }
+}
+```
+
+Dependencies involving moved resources are cleared and rebuilt on next apply.
+
+**Reference**: `internal/command/state_mv.go:352-372`
+
+## State Locking Behavior
+
+All write operations acquire state locks:
+
+```go
+// From internal/command/state_rm.go:50
+if c.stateLock {
+    stateLocker := clistate.NewLocker(c.stateLockTimeout, views.NewStateLocker(arguments.ViewHuman, c.View))
+    if diags := stateLocker.Lock(stateMgr, "state-rm"); diags.HasErrors() {
+        c.showDiagnostics(diags)
+        return 1
+    }
+    defer func() {
+        if diags := stateLocker.Unlock(); diags.HasErrors() {
+            c.showDiagnostics(diags)
+        }
+    }()
+}
+```
+
+**Reference**: `internal/command/state_rm.go:50-61`
+
+See [State Locking](/state/locking) for detailed locking information.
+
+## State Backup Behavior
+
+Terraform automatically creates backups:
+
+```bash
+# Default backup
+terraform state rm aws_instance.web
+# Creates: terraform.tfstate.backup
+
+# Custom backup path
+terraform state rm -backup=custom.backup aws_instance.web
+
+# Disable backup (not recommended)
+terraform state rm -backup="-" aws_instance.web
+```
+
+<Note>
+Backups are only created for local state. Remote backends handle backups according to their own mechanisms.
+</Note>
+
+## Common Patterns
+
+### Refactoring Resources
+
+```bash
+# 1. Move resources to new structure
+terraform state mv aws_instance.old module.compute.aws_instance.new
+
+# 2. Update configuration to match
+# Edit .tf files
+
+# 3. Verify with plan
+terraform plan  # Should show no changes
+```
+
+### Splitting State Files
+
+```bash
+# 1. Create new state file
+terraform state mv -state-out=new.tfstate module.extracted module.extracted
+
+# 2. Configure new backend for extracted resources
+# 3. Initialize new backend
+cd extracted/
+terraform init
+```
+
+### Resource Migration Between Workspaces
+
+```bash
+# Export from workspace A
+terraform workspace select workspace-a
+terraform state pull > /tmp/resource.tfstate
+
+# Extract specific resource
+terraform state mv -state=/tmp/resource.tfstate \
+  aws_instance.web \
+  -state-out=/tmp/extracted.tfstate
+
+# Import to workspace B  
+terraform workspace select workspace-b
+terraform state push /tmp/extracted.tfstate
+```
+
+## Error Handling
+
+### Source Not Found
+
+```
+Error: Invalid source address
+
+Cannot move "aws_instance.missing": does not match anything in the current state.
+```
+
+**Solution**: Verify resource exists with `terraform state list`.
+
+### Destination Already Exists
+
+```
+Error: Invalid target address
+
+Cannot move to "aws_instance.web": there is already a resource at that address.
+```
+
+**Solution**: Remove or rename existing resource first.
+
+### Type Mismatch
+
+```
+Error: Invalid state move request
+
+Cannot move aws_instance.web to data.aws_ami.web: resource types don't match.
+```
+
+**Solution**: Ensure source and destination have compatible types.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always Backup Before Modification">
+    Create explicit backups before state manipulation:
+    ```bash
+    terraform state pull > backup-$(date +%Y%m%d-%H%M%S).tfstate
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Dry Run First">
+    Test operations with `-dry-run` before executing:
+    ```bash
+    terraform state mv -dry-run source destination
+    ```
+  </Accordion>
+  
+  <Accordion title="Verify with Plan">
+    Always run `terraform plan` after state changes to verify consistency.
+  </Accordion>
+  
+  <Accordion title="Update Configuration to Match">
+    After moving resources in state, update configuration files to match the new structure.
+  </Accordion>
+  
+  <Accordion title="Document State Changes">
+    Keep records of state manipulations:
+    - Why the change was needed
+    - What was moved/removed
+    - Who performed the operation
+    - When it was done
+  </Accordion>
+  
+  <Accordion title="Test in Non-Production First">
+    Practice state manipulation workflows in development environments before production.
+  </Accordion>
+</AccordionGroup>
+
+## Related Resources
+
+- [State Overview](/state/overview) - Core state concepts
+- [State Locking](/state/locking) - Locking during state operations
+- [Import Workflow](/state/import) - Importing existing resources
+- [State Backends](/state/backends) - Backend configuration
+
+## Source Code References
+
+- **State List**: `internal/command/state_list.go`
+- **State Show**: `internal/command/state_show.go`
+- **State Move**: `internal/command/state_mv.go`
+- **State Remove**: `internal/command/state_rm.go`
+- **State Pull**: `internal/command/state_pull.go`
+- **State Push**: `internal/command/state_push.go`
+- **State Replace Provider**: `internal/command/state_replace_provider.go`
+- **State Sync Operations**: `internal/states/sync.go`

@@ -1,0 +1,673 @@
+---
+title: Workspaces
+description: Manage multiple environments and state files using Terraform workspaces for development, staging, and production.
+---
+
+# Workspaces
+
+Terraform workspaces allow you to manage multiple distinct sets of infrastructure resources using the same configuration. Each workspace has its own state file, enabling you to maintain separate environments like development, staging, and production.
+
+## What They Do
+
+Workspaces provide:
+
+- **Isolated state files** for each environment
+- **Same configuration** used across multiple deployments
+- **Easy switching** between environments
+- **Separate resource instances** per workspace
+- **Built-in environment management** without additional tooling
+
+## When to Use Them
+
+Use workspaces when you want to:
+
+- Deploy the same infrastructure configuration to multiple environments
+- Test changes in a development workspace before promoting to production
+- Maintain separate state for each team member's development environment
+- Create temporary environments for testing or feature development
+- Manage multiple regions or accounts with similar infrastructure
+
+**Note:** For significantly different environments, separate Terraform configurations may be more appropriate than workspaces.
+
+## Workspace Basics
+
+### Default Workspace
+
+Every Terraform configuration starts with a workspace named `default`:
+
+```bash
+terraform workspace show
+# Output: default
+```
+
+The default workspace cannot be deleted.
+
+### Current Workspace
+
+Check which workspace you're currently using:
+
+```bash
+terraform workspace show
+# Output: production
+```
+
+## Working with Workspaces
+
+### List Workspaces
+
+<Steps>
+  <Step title="List all workspaces">
+    View all available workspaces:
+    
+    ```bash
+    terraform workspace list
+    ```
+    
+    **Example output:**
+    ```
+      default
+    * development
+      staging
+      production
+    ```
+    
+    The `*` indicates the currently selected workspace.
+  </Step>
+</Steps>
+
+### Create a New Workspace
+
+<Steps>
+  <Step title="Create a workspace">
+    Create and switch to a new workspace:
+    
+    ```bash
+    terraform workspace new development
+    ```
+    
+    **Example output:**
+    ```
+    Created and switched to workspace "development"!
+    
+    You're now on a new, empty workspace. Workspaces isolate their state,
+    so if you run "terraform plan" Terraform will not see any existing state
+    for this configuration.
+    ```
+  </Step>
+
+  <Step title="Initialize if needed">
+    If this is a new workspace, you may need to run init:
+    
+    ```bash
+    terraform init
+    ```
+  </Step>
+
+  <Step title="Apply configuration">
+    Deploy infrastructure in the new workspace:
+    
+    ```bash
+    terraform apply
+    ```
+    
+    Resources are created with the workspace-specific state file.
+  </Step>
+</Steps>
+
+### Create Workspace from Existing State
+
+Create a workspace and populate it with an existing state file:
+
+```bash
+terraform workspace new staging -state=terraform.tfstate.staging
+```
+
+**Example output:**
+```
+Created and switched to workspace "staging"!
+```
+
+### Switch Between Workspaces
+
+<Steps>
+  <Step title="Select a workspace">
+    Switch to an existing workspace:
+    
+    ```bash
+    terraform workspace select production
+    ```
+    
+    **Example output:**
+    ```
+    Switched to workspace "production".
+    ```
+  </Step>
+
+  <Step title="Verify the switch">
+    Confirm you're in the correct workspace:
+    
+    ```bash
+    terraform workspace show
+    # Output: production
+    ```
+  </Step>
+
+  <Step title="View workspace resources">
+    List resources in the current workspace:
+    
+    ```bash
+    terraform state list
+    ```
+  </Step>
+</Steps>
+
+### Create Workspace if Not Exists
+
+Select a workspace and create it if it doesn't exist:
+
+```bash
+terraform workspace select -or-create qa
+```
+
+**Example output:**
+```
+Created and switched to workspace "qa"!
+```
+
+### Delete a Workspace
+
+<Steps>
+  <Step title="Switch away from the workspace">
+    You cannot delete the active workspace:
+    
+    ```bash
+    terraform workspace select default
+    ```
+  </Step>
+
+  <Step title="Delete the workspace">
+    Remove the workspace and its state:
+    
+    ```bash
+    terraform workspace delete development
+    ```
+    
+    **Example output:**
+    ```
+    Deleted workspace "development"!
+    ```
+  </Step>
+</Steps>
+
+**Warning:** If the workspace contains resources, you'll see:
+
+```
+Workspace "development" was non-empty.
+The resources managed by the deleted workspace may still exist,
+but are no longer manageable by Terraform since the state has
+been deleted.
+```
+
+**Best practice:** Destroy all resources before deleting a workspace:
+
+```bash
+terraform workspace select development
+terraform destroy
+terraform workspace select default
+terraform workspace delete development
+```
+
+## Using Workspaces in Configuration
+
+### Referencing Current Workspace
+
+Use `terraform.workspace` to reference the current workspace name:
+
+```hcl
+resource "aws_instance" "web" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = terraform.workspace == "production" ? "t3.large" : "t2.micro"
+  
+  tags = {
+    Name        = "web-${terraform.workspace}"
+    Environment = terraform.workspace
+  }
+}
+```
+
+**Result in different workspaces:**
+
+- **development:** Creates `t2.micro` instance tagged `web-development`
+- **production:** Creates `t3.large` instance tagged `web-production`
+
+### Workspace-Specific Variables
+
+Use different variable files per workspace:
+
+```bash
+terraform apply -var-file="${terraform.workspace}.tfvars"
+```
+
+**Example files:**
+- `development.tfvars`
+- `staging.tfvars`
+- `production.tfvars`
+
+**development.tfvars:**
+```hcl
+instance_count = 1
+instance_type  = "t2.micro"
+environment    = "development"
+```
+
+**production.tfvars:**
+```hcl
+instance_count = 5
+instance_type  = "t3.large"
+environment    = "production"
+```
+
+### Conditional Resources
+
+Create resources only in specific workspaces:
+
+```hcl
+resource "aws_instance" "debug" {
+  count = terraform.workspace == "development" ? 1 : 0
+  
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+  
+  tags = {
+    Name = "debug-server"
+  }
+}
+```
+
+This creates a debug server only in the development workspace.
+
+### Backend Configuration Per Workspace
+
+Some backends automatically isolate workspace state:
+
+**S3 Backend:**
+```hcl
+terraform {
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "project/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+```
+
+**State file paths:**
+- `default` workspace: `s3://my-terraform-state/project/terraform.tfstate`
+- `staging` workspace: `s3://my-terraform-state/env:/staging/project/terraform.tfstate`
+- `production` workspace: `s3://my-terraform-state/env:/production/project/terraform.tfstate`
+
+**Local Backend:**
+
+```hcl
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+}
+```
+
+**State file paths:**
+- `default` workspace: `terraform.tfstate`
+- `development` workspace: `terraform.tfstate.d/development/terraform.tfstate`
+- `production` workspace: `terraform.tfstate.d/production/terraform.tfstate`
+
+## Workspace Commands Reference
+
+### terraform workspace list
+
+List all workspaces:
+
+```bash
+terraform workspace list
+```
+
+**Options:** None
+
+### terraform workspace show
+
+Show the current workspace name:
+
+```bash
+terraform workspace show
+```
+
+**Options:** None
+
+### terraform workspace new
+
+Create a new workspace:
+
+```bash
+terraform workspace new <name> [options]
+```
+
+**Options:**
+
+- `-lock=false` - Don't hold a state lock during the operation
+- `-lock-timeout=DURATION` - Duration to retry a state lock
+- `-state=PATH` - Copy an existing state file into the new workspace
+
+**Examples:**
+
+```bash
+# Create workspace
+terraform workspace new staging
+
+# Create with existing state
+terraform workspace new staging -state=backup.tfstate
+
+# Create without locking
+terraform workspace new dev -lock=false
+```
+
+### terraform workspace select
+
+Switch to a different workspace:
+
+```bash
+terraform workspace select <name> [options]
+```
+
+**Options:**
+
+- `-or-create` - Create the workspace if it doesn't exist
+
+**Examples:**
+
+```bash
+# Switch to workspace
+terraform workspace select production
+
+# Switch or create
+terraform workspace select -or-create qa
+```
+
+### terraform workspace delete
+
+Delete a workspace:
+
+```bash
+terraform workspace delete <name> [options]
+```
+
+**Options:**
+
+- `-lock=false` - Don't hold a state lock during the operation
+- `-lock-timeout=DURATION` - Duration to retry a state lock
+- `-force` - Remove workspace even if it contains resources
+
+**Examples:**
+
+```bash
+# Delete workspace
+terraform workspace delete staging
+
+# Force delete (dangerous)
+terraform workspace delete dev -force
+```
+
+## Best Practices
+
+### Workspace Naming Conventions
+
+Use clear, descriptive names:
+
+```bash
+# Good names
+terraform workspace new development
+terraform workspace new staging  
+terraform workspace new production
+terraform workspace new feature-new-auth
+terraform workspace new dev-alice
+
+# Avoid ambiguous names
+terraform workspace new test  # Which test?
+terraform workspace new temp   # What is it for?
+```
+
+### Verify Before Destructive Operations
+
+Always confirm workspace before apply or destroy:
+
+```bash
+# Check workspace
+terraform workspace show
+
+# If wrong workspace, switch
+terraform workspace select development
+
+# Then proceed
+terraform destroy
+```
+
+### Use Workspace-Aware Naming
+
+Include workspace name in resource names:
+
+```hcl
+resource "aws_s3_bucket" "data" {
+  bucket = "myapp-data-${terraform.workspace}"
+  
+  tags = {
+    Workspace = terraform.workspace
+  }
+}
+```
+
+**Result:**
+- development: `myapp-data-development`
+- production: `myapp-data-production`
+
+### Avoid Workspace Interpolation in Backend
+
+Don't use `terraform.workspace` in backend configuration:
+
+```hcl
+# BAD: This won't work
+terraform {
+  backend "s3" {
+    bucket = "myapp-${terraform.workspace}-state"  # Error!
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+```
+
+Backends are configured before workspace selection.
+
+### Limit Workspace Use Cases
+
+Workspaces are best for:
+- **Similar environments** (dev, staging, prod of the same app)
+- **Temporary environments** (feature branches, testing)
+- **Personal development** environments
+
+Use separate configurations for:
+- **Different applications**
+- **Significantly different architectures**
+- **Different regions or accounts** (though workspaces can work here too)
+
+### Document Workspace Purpose
+
+Maintain a README documenting workspaces:
+
+```markdown
+# Terraform Workspaces
+
+- `default` - Not used (required by Terraform)
+- `development` - Shared development environment
+- `staging` - Pre-production testing
+- `production` - Production environment
+- `dev-*` - Personal development workspaces
+```
+
+### Protect Production Workspace
+
+Add safeguards for production:
+
+```bash
+# In CI/CD or scripts
+if [ "$(terraform workspace show)" = "production" ]; then
+  echo "Production changes require manual approval"
+  exit 1
+fi
+```
+
+### Clean Up Temporary Workspaces
+
+Regularly remove unused workspaces:
+
+```bash
+# List workspaces
+terraform workspace list
+
+# Destroy and delete old feature workspaces
+terraform workspace select feature-old-123
+terraform destroy -auto-approve
+terraform workspace select default
+terraform workspace delete feature-old-123
+```
+
+## Workspace Environment Variable Override
+
+The `TF_WORKSPACE` environment variable overrides workspace selection:
+
+```bash
+export TF_WORKSPACE=staging
+terraform plan  # Runs in staging workspace
+```
+
+**Warning message:**
+```
+The active workspace is being overridden using the TF_WORKSPACE environment
+variable.
+```
+
+To change workspaces, you must unset or change the variable:
+
+```bash
+unset TF_WORKSPACE
+terraform workspace select production
+```
+
+## Troubleshooting
+
+### Cannot Delete Active Workspace
+
+```
+Error: Workspace "development" is your active workspace.
+
+You cannot delete the currently active workspace. Please switch
+to another workspace and try again.
+```
+
+**Solution:**
+```bash
+terraform workspace select default
+terraform workspace delete development
+```
+
+### Workspace Not Found
+
+```
+Workspace "staging" doesn't exist.
+
+You can create this workspace with the "new" subcommand.
+```
+
+**Solution:**
+```bash
+terraform workspace new staging
+# Or
+terraform workspace select -or-create staging
+```
+
+### Invalid Workspace Name
+
+```
+The workspace name "my/workspace" is not allowed. The name must contain only URL safe
+characters, contain no path separators, and not be an empty string.
+```
+
+**Solution:** Use valid characters (alphanumeric, hyphens, underscores):
+```bash
+terraform workspace new my-workspace
+```
+
+### Lost Workspace State
+
+If you've lost a workspace's state file:
+
+```bash
+# Try to recover from backend
+terraform workspace select production
+terraform state pull > recovered.tfstate
+
+# Or recreate workspace
+terraform workspace new production -state=backup.tfstate
+```
+
+### Workspace Locked
+
+```
+Error: Error acquiring the state lock for workspace "production"
+```
+
+**Solution:**
+```bash
+# Wait for lock to release
+terraform workspace select production -lock-timeout=10m
+
+# Or force unlock (dangerous)
+terraform force-unlock <lock-id>
+```
+
+## Alternatives to Workspaces
+
+### Separate Directories
+
+Use different directories for each environment:
+
+```
+infrastructure/
+├── development/
+│   ├── main.tf
+│   ├── variables.tf
+│   └── terraform.tfstate
+├── staging/
+│   ├── main.tf
+│   ├── variables.tf
+│   └── terraform.tfstate
+└── production/
+    ├── main.tf
+    ├── variables.tf
+    └── terraform.tfstate
+```
+
+### Separate Repositories
+
+Use different Git repositories for significantly different environments.
+
+### Terragrunt
+
+Use [Terragrunt](https://terragrunt.gruntwork.io/) for more sophisticated environment management.
+
+## Next Steps
+
+After setting up workspaces:
+
+1. Document your workspace strategy for your team
+2. Set up workspace-specific variable files
+3. Configure CI/CD to handle multiple workspaces
+4. Implement workspace protection for production
+5. Regularly audit and clean up unused workspaces

@@ -1,0 +1,509 @@
+---
+title: Output Values
+description: Export values from Terraform configurations for external use and module composition.
+---
+
+# Output Values
+
+Output values are like return values for Terraform modules. They expose information about your infrastructure for use by other configurations, display to users, or integration with external tools.
+
+## Declaring Outputs
+
+Declare output values using `output` blocks:
+
+```hcl
+output "<NAME>" {
+  value = <EXPRESSION>
+}
+```
+
+### Basic Example
+
+```hcl
+output "instance_ip" {
+  value       = aws_instance.web.public_ip
+  description = "Public IP address of the web server"
+}
+```
+
+## Output Arguments
+
+<ParamField path="value" type="any" required>
+  The value to export. Can be any Terraform expression.
+  
+  ```hcl
+  value = aws_instance.web.id
+  value = [for i in aws_instance.web : i.private_ip]
+  value = {
+    id = aws_instance.web.id
+    ip = aws_instance.web.public_ip
+  }
+  ```
+</ParamField>
+
+<ParamField path="description" type="string">
+  Human-readable description of the output's purpose.
+  
+  ```hcl
+  description = "The public IP address of the web server"
+  ```
+</ParamField>
+
+<ParamField path="sensitive" type="boolean">
+  Hide the value in Terraform output. Default is `false`.
+  
+  ```hcl
+  sensitive = true
+  ```
+</ParamField>
+
+<ParamField path="depends_on" type="list">
+  Explicit dependencies for the output.
+  
+  ```hcl
+  depends_on = [
+    aws_instance.web,
+    aws_security_group.web,
+  ]
+  ```
+</ParamField>
+
+<ParamField path="ephemeral" type="boolean">
+  Marks the output as ephemeral (not persisted in state).
+  
+  ```hcl
+  ephemeral = true
+  ```
+</ParamField>
+
+## Output Examples
+
+### Simple Values
+
+```hcl
+output "instance_id" {
+  value       = aws_instance.web.id
+  description = "ID of the EC2 instance"
+}
+
+output "public_ip" {
+  value = aws_instance.web.public_ip
+}
+```
+
+### Complex Values
+
+```hcl
+output "instance_details" {
+  value = {
+    id         = aws_instance.web.id
+    public_ip  = aws_instance.web.public_ip
+    private_ip = aws_instance.web.private_ip
+    az         = aws_instance.web.availability_zone
+  }
+  description = "Complete details of the instance"
+}
+```
+
+### Collection Outputs
+
+```hcl
+output "all_instance_ips" {
+  value       = aws_instance.web[*].private_ip
+  description = "Private IP addresses of all instances"
+}
+
+output "instance_map" {
+  value = {
+    for instance in aws_instance.web :
+    instance.id => instance.private_ip
+  }
+}
+```
+
+### Computed Outputs
+
+```hcl
+output "connection_string" {
+  value       = "https://${aws_instance.web.public_ip}:8080"
+  description = "Complete connection string"
+}
+
+output "uppercase_name" {
+  value = upper(var.instance_name)
+}
+```
+
+## Viewing Outputs
+
+### During Apply
+
+Outputs are shown after `terraform apply`:
+
+```bash
+terraform apply
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+instance_id = "i-1234567890abcdef0"
+public_ip = "54.123.45.67"
+```
+
+### Query Outputs
+
+View outputs without applying changes:
+
+```bash
+# All outputs
+terraform output
+
+# Specific output
+terraform output instance_ip
+
+# JSON format
+terraform output -json
+```
+
+### Output Format
+
+```bash
+# Raw value (useful for scripts)
+terraform output -raw instance_ip
+```
+
+## Sensitive Outputs
+
+Mark outputs containing secrets:
+
+```hcl
+output "database_password" {
+  value     = aws_db_instance.database.password
+  sensitive = true
+}
+```
+
+Sensitive outputs:
+- Are hidden in `terraform apply` output
+- Show `<sensitive>` instead of the value
+- Can be viewed with `terraform output`
+
+```bash
+terraform output database_password
+```
+
+<Warning>
+Sensitive outputs are still stored in plain text in the state file. Always encrypt your state file.
+</Warning>
+
+## Module Outputs
+
+Outputs are essential for module composition:
+
+### Child Module
+
+```hcl
+# modules/web-app/outputs.tf
+output "instance_id" {
+  value       = aws_instance.app.id
+  description = "ID of the application instance"
+}
+
+output "endpoint" {
+  value = "https://${aws_instance.app.public_ip}"
+}
+```
+
+### Root Module
+
+```hcl
+# main.tf
+module "web_app" {
+  source = "./modules/web-app"
+  
+  instance_type = var.instance_type
+}
+
+output "web_app_id" {
+  value = module.web_app.instance_id
+}
+
+output "web_app_url" {
+  value = module.web_app.endpoint
+}
+```
+
+## Preconditions
+
+Validate output values:
+
+```hcl
+output "api_endpoint" {
+  value = aws_instance.api.public_ip
+  
+  precondition {
+    condition     = aws_instance.api.public_ip != ""
+    error_message = "API instance must have a public IP address."
+  }
+}
+```
+
+<Note>
+From internal/configs/named_values.go:443-461, outputs support preconditions but not postconditions.
+</Note>
+
+## Deprecated Outputs
+
+Mark outputs as deprecated:
+
+```hcl
+output "old_endpoint" {
+  value      = aws_instance.web.public_dns
+  deprecated = "Use 'endpoint' output instead"
+}
+```
+
+## Output Use Cases
+
+### Displaying Information
+
+Show important information to users:
+
+```hcl
+output "next_steps" {
+  value = <<-EOT
+    Your infrastructure is ready!
+    
+    SSH Command: ssh ubuntu@${aws_instance.web.public_ip}
+    Web URL: http://${aws_instance.web.public_ip}
+  EOT
+}
+```
+
+### Chaining Modules
+
+Pass data between modules:
+
+```hcl
+module "network" {
+  source = "./modules/network"
+}
+
+module "compute" {
+  source = "./modules/compute"
+  
+  vpc_id    = module.network.vpc_id
+  subnet_id = module.network.subnet_id
+}
+```
+
+### Integration with Tools
+
+Export data for external tools:
+
+```bash
+# Use in scripts
+INSTANCE_IP=$(terraform output -raw instance_ip)
+ssh ubuntu@$INSTANCE_IP
+
+# Export to environment
+export DB_HOST=$(terraform output -raw database_endpoint)
+```
+
+### Remote State Data Source
+
+Share outputs across configurations:
+
+```hcl
+# Configuration A outputs
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+# Configuration B reads outputs
+data "terraform_remote_state" "network" {
+  backend = "s3"
+  
+  config = {
+    bucket = "terraform-state"
+    key    = "network/terraform.tfstate"
+    region = "us-west-2"
+  }
+}
+
+resource "aws_instance" "web" {
+  vpc_id = data.terraform_remote_state.network.outputs.vpc_id
+}
+```
+
+## Output Examples from Source
+
+From internal/configs/testdata/valid-files/outputs.tf:
+
+```hcl
+output "foo" {
+  value = "hello"
+}
+
+output "bar" {
+  value = local.bar
+}
+
+output "baz" {
+  value     = "ssshhhhhhh"
+  sensitive = true
+}
+
+output "cheeze_pizza" {
+  description = "Nothing special"
+  value       = "🍕"
+}
+
+output "π" {
+  value = 3.14159265359
+  depends_on = [
+    pizza.cheese,
+  ]
+}
+```
+
+## Output Naming
+
+Output names must:
+- Start with a letter or underscore
+- Contain only letters, digits, underscores, and hyphens
+- Be unique within the configuration
+
+```hcl
+output "instance_id" { }      # Valid
+output "instance-id" { }      # Valid
+output "_private_data" { }    # Valid
+output "2nd_instance" { }     # Invalid
+```
+
+## Implementation Details
+
+From internal/configs/named_values.go:362-381:
+
+```go
+type Output struct {
+    Name        string
+    Description string
+    Expr        hcl.Expression
+    DependsOn   []hcl.Traversal
+    Sensitive   bool
+    Ephemeral   bool
+    Deprecated  string
+    
+    Preconditions []*CheckRule
+    
+    DescriptionSet bool
+    SensitiveSet   bool
+    EphemeralSet   bool
+    DeprecatedSet  bool
+    
+    DeclRange       hcl.Range
+    DeprecatedRange hcl.Range
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Add Descriptions" icon="book">
+    Always include descriptions to help users understand output purpose and usage.
+  </Card>
+  
+  <Card title="Use Sensitive Flag" icon="eye-slash">
+    Mark outputs containing credentials or secrets as sensitive.
+  </Card>
+  
+  <Card title="Structured Data" icon="sitemap">
+    Group related values into objects for better organization.
+  </Card>
+  
+  <Card title="Meaningful Names" icon="tag">
+    Use clear, descriptive names that indicate the output's content.
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+### Connection Information
+
+```hcl
+output "connection_info" {
+  value = {
+    host     = aws_instance.web.public_ip
+    port     = 22
+    username = "ubuntu"
+  }
+  description = "SSH connection information"
+}
+```
+
+### Resource IDs
+
+```hcl
+output "resource_ids" {
+  value = {
+    vpc        = aws_vpc.main.id
+    subnet     = aws_subnet.public.id
+    instance   = aws_instance.web.id
+    security_group = aws_security_group.web.id
+  }
+}
+```
+
+### Conditional Outputs
+
+```hcl
+output "public_endpoint" {
+  value = var.create_public_ip ? aws_instance.web.public_ip : null
+}
+```
+
+### Filtered Lists
+
+```hcl
+output "production_instances" {
+  value = [
+    for instance in aws_instance.web :
+    instance.id if instance.tags["Environment"] == "production"
+  ]
+}
+```
+
+## Troubleshooting
+
+### Output Not Shown
+
+If outputs don't appear:
+1. Ensure the output block is valid
+2. Check that resources exist in state
+3. Verify expressions are correct
+
+### Sensitive Output Warning
+
+```
+Warning: Output "password" contains sensitive data
+```
+
+This is expected for sensitive outputs. Use `-raw` to view:
+
+```bash
+terraform output -raw password
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Variables" href="/language/variables" icon="input-text">
+    Learn about input variables
+  </Card>
+  
+  <Card title="Modules" href="/language/modules" icon="cube">
+    Use outputs for module composition
+  </Card>
+</CardGroup>

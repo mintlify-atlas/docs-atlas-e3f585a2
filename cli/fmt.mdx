@@ -1,0 +1,67 @@
+---
+title: terraform fmt
+description: The terraform fmt command rewrites Terraform configuration files to a canonical format and style.
+---
+
+# Command: fmt
+
+The `terraform fmt` command is used to rewrite Terraform configuration files to a canonical format and style. This command applies a subset of the [Terraform language style conventions](/terraform/language/syntax/style), along with other minor adjustments for readability.
+
+## Usage
+
+```bash
+terraform fmt [options] [target...]
+```
+
+By default, `fmt` scans the current directory for configuration files. If you provide a directory for the `target` argument, then `fmt` will scan that directory instead. If you provide a file, then `fmt` will process just that file. If you provide a single dash (`-`), then `fmt` will read from standard input (STDIN).
+
+The command formats all configuration files (`.tf`), variables files (`.tfvars`), and testing files (`.tftest.hcl`) in the target directory. JSON files (`.tf.json`, `.tfvars.json`, or `.tftest.json`) are not modified.
+
+## Options
+
+- `-list=false` - Don't list the files containing formatting inconsistencies. This flag is always disabled when using STDIN.
+
+- `-write=false` - Don't overwrite the input files. This flag is implied when using STDIN or when using the `-check` flag.
+
+- `-diff` - Display diffs of formatting changes.
+
+- `-check` - Check if the input is formatted. Exit status will be 0 if all input is properly formatted and non-zero otherwise.
+
+- `-recursive` - Also process files in subdirectories. By default, only the given directory (or current directory) is processed.
+
+- `-no-color` - If specified, output won't contain any color.
+
+## Example
+
+Format the configuration files in the current directory:
+
+```bash
+terraform fmt
+```
+
+Format a specific file:
+
+```bash
+terraform fmt main.tf
+```
+
+Check if files are formatted without modifying them:
+
+```bash
+terraform fmt -check
+```
+
+Recursively format all files in the current directory and subdirectories:
+
+```bash
+terraform fmt -recursive
+```
+
+## Exit Codes
+
+The `terraform fmt` command returns the following exit codes:
+
+- `0` - Success: Files were already formatted or were successfully formatted.
+- `1` - Error: An error occurred (for example, invalid syntax).
+- `2` - Parse error: At least one file had a syntax error.
+- `3` - Format check failed: When using `-check`, at least one file was not properly formatted.

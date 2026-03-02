@@ -1,0 +1,77 @@
+---
+title: terraform login
+description: The terraform login command obtains and saves credentials for HCP Terraform or Terraform Enterprise.
+---
+
+# Command: login
+
+The `terraform login` command can be used to automatically obtain and save an API token for HCP Terraform, Terraform Enterprise, or any other host that offers Terraform services.
+
+## Usage
+
+```bash
+terraform login [hostname]
+```
+
+If no hostname is provided, the default hostname is `app.terraform.io`, to log in to HCP Terraform.
+
+This command interactively helps you log in to HCP Terraform or a Terraform Enterprise instance. Terraform uses the token to authenticate when you run other commands that access state, such as `terraform plan` and `terraform apply`.
+
+<Note>
+This command is only necessary when using HCP Terraform or Terraform Enterprise for state storage or remote operations. It is not needed for typical Terraform workflows with local state.
+</Note>
+
+## Credentials Storage
+
+By default, Terraform will obtain an API token and save it in a local CLI configuration file called `credentials.tfrc.json`. The default location of this file is:
+
+- On Linux and macOS: `~/.terraform.d/credentials.tfrc.json`
+- On Windows: `%APPDATA%\terraform.d\credentials.tfrc.json`
+
+The credentials file is in JSON format:
+
+```json
+{
+  "credentials": {
+    "app.terraform.io": {
+      "token": "your-api-token-here"
+    }
+  }
+}
+```
+
+## Interactive Login Process
+
+When you run `terraform login`, Terraform will:
+
+1. Ask for your consent to open a web browser
+2. Open your web browser to the login page for the specified host
+3. Wait for you to log in and authorize the token creation
+4. Receive the token from the host
+5. Save the token to your local credentials file
+
+## OAuth Flow
+
+Terraform uses OAuth to obtain credentials when possible. If the host does not support OAuth, Terraform will guide you through manually creating a token in the web interface and pasting it into the terminal.
+
+## Example
+
+Log in to HCP Terraform:
+
+```bash
+terraform login
+```
+
+Log in to a Terraform Enterprise instance:
+
+```bash
+terraform login app.terraform.example.com
+```
+
+## Manual Token Configuration
+
+If you prefer to configure credentials manually, or if you're running Terraform in an automated environment, you can create the credentials file manually or use environment variables. See the [CLI Configuration documentation](/terraform/cli/config/config-file#credentials) for more details.
+
+## Credentials Helpers
+
+For advanced use cases, Terraform supports credentials helpers that can retrieve credentials from external systems like password managers or secrets management systems. Configure these in your [CLI configuration file](/terraform/cli/config/config-file).

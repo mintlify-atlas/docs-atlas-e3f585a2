@@ -1,0 +1,180 @@
+---
+title: terraform init
+description: Initialize a Terraform working directory
+---
+
+## Synopsis
+
+Prepare your working directory for other commands
+
+## Description
+
+The `terraform init` command initializes a working directory containing Terraform configuration files. This is the first command that should be run after writing a new Terraform configuration or cloning an existing one from version control. It is safe to run this command multiple times.
+
+This command performs several initialization steps:
+- Downloads and installs provider plugins
+- Initializes the backend for storing state
+- Downloads modules referenced in the configuration
+- Creates a dependency lock file
+
+## Usage
+
+```bash
+terraform init [options]
+```
+
+## Options
+
+### Backend Configuration
+
+<ParamField path="-backend" type="boolean" default="true">
+  Configure the backend for this configuration. Alias for `-cloud`.
+</ParamField>
+
+<ParamField path="-cloud" type="boolean" default="true">
+  Configure HCP Terraform or backend for this configuration. Alias for `-backend`.
+</ParamField>
+
+<ParamField path="-backend-config" type="string">
+  Configuration to be merged with what is in the configuration file's 'backend' block. This can be either a path to an HCL file with key/value assignments or a 'key=value' format. This can be specified multiple times. The backend type must be in the configuration itself.
+</ParamField>
+
+<ParamField path="-reconfigure" type="boolean" default="false">
+  Reconfigure the backend, ignoring any saved configuration.
+</ParamField>
+
+<ParamField path="-migrate-state" type="boolean" default="false">
+  Reconfigure the backend, and attempt to migrate any existing state. Cannot be used with `-reconfigure`.
+</ParamField>
+
+### Module Installation
+
+<ParamField path="-get" type="boolean" default="true">
+  Download modules for this configuration.
+</ParamField>
+
+<ParamField path="-upgrade" type="boolean" default="false">
+  Upgrade modules and plugins to the latest versions that comply with the configuration's version constraints.
+</ParamField>
+
+<ParamField path="-from-module" type="string">
+  Copy the contents of the given module into the target directory before initialization.
+</ParamField>
+
+### Provider Configuration
+
+<ParamField path="-lockfile" type="string">
+  Set a dependency lockfile mode. Valid values: `readonly` (don't modify the lock file) or empty string (default behavior).
+</ParamField>
+
+<ParamField path="-plugin-dir" type="string">
+  Directory containing plugin binaries. This overrides all default search paths for plugins, and prevents the automatic installation of plugins. This flag can be used multiple times.
+</ParamField>
+
+### State Management
+
+<ParamField path="-lock" type="boolean" default="true">
+  Lock the state file when locking is supported.
+</ParamField>
+
+<ParamField path="-lock-timeout" type="duration" default="0s">
+  Duration to retry a state lock. For example: "10s" for 10 seconds.
+</ParamField>
+
+<ParamField path="-force-copy" type="boolean" default="false">
+  Suppress prompts about copying state data. This is equivalent to providing a "yes" to all confirmation prompts.
+</ParamField>
+
+### Other Options
+
+<ParamField path="-input" type="boolean" default="true">
+  Ask for input for variables if not directly set.
+</ParamField>
+
+<ParamField path="-json" type="boolean" default="false">
+  Produce output in a machine-readable JSON format.
+</ParamField>
+
+<ParamField path="-no-color" type="boolean" default="false">
+  If specified, output won't contain any color.
+</ParamField>
+
+<ParamField path="-ignore-remote-version" type="boolean" default="false">
+  Continue even if remote and local Terraform versions are incompatible. This can result in an unusable workspace, and should be used with extreme caution.
+</ParamField>
+
+<ParamField path="-test-directory" type="string" default="tests">
+  Set the Terraform test directory, defaults to "tests".
+</ParamField>
+
+## Examples
+
+### Basic Initialization
+
+Initialize a working directory:
+
+```bash
+$ terraform init
+
+Initializing the backend...
+
+Initializing provider plugins...
+- Finding latest version of hashicorp/aws...
+- Installing hashicorp/aws v5.1.0...
+- Installed hashicorp/aws v5.1.0 (signed by HashiCorp)
+
+Terraform has created a lock file .terraform.lock.hcl to record the provider
+selections it made above. Include this file in your version control repository
+so that Terraform can guarantee to make the same selections by default when
+you run "terraform init" in the future.
+
+Terraform has been successfully initialized!
+```
+
+### Initialize with Backend Configuration
+
+Initialize with additional backend configuration:
+
+```bash
+$ terraform init -backend-config="bucket=my-tf-state"
+
+Initializing the backend...
+Successfully configured the backend "s3"!
+
+Terraform has been successfully initialized!
+```
+
+### Upgrade Providers and Modules
+
+Upgrade all providers and modules to the latest versions:
+
+```bash
+$ terraform init -upgrade
+
+Upgrading modules...
+Upgrading provider plugins...
+- Finding latest version of hashicorp/aws...
+- Installing hashicorp/aws v5.2.0...
+- Installed hashicorp/aws v5.2.0 (signed by HashiCorp)
+```
+
+### Non-Interactive Mode
+
+Run init in non-interactive mode (useful for CI/CD):
+
+```bash
+$ terraform init -input=false
+```
+
+### Initialize from Module
+
+Copy a module and initialize:
+
+```bash
+$ terraform init -from-module=./modules/vpc
+```
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Error occurred

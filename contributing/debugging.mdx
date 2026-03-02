@@ -1,0 +1,379 @@
+---
+title: Debugging Terraform
+description: Learn how to debug Terraform using Delve, VS Code, GoLand, and other debugging tools for both tests and live operations.
+---
+
+## Overview
+
+Terraform is written in Go, so you can use [Delve](https://github.com/go-delve/delve) for debugging. Modern IDEs like GoLand and VS Code have built-in debugging support for Go projects.
+
+## Debugging Automated Tests
+
+Debugging tests is often the most straightforward workflow for debugging a section of the codebase.
+
+### VS Code Test Debugging
+
+The [Go extension for VS Code](https://code.visualstudio.com/docs/languages/go#_debugging) adds `run test | debug test` options above all tests in `*_test.go` files. These work without any configuration.
+
+<Info>
+  Simply click "debug test" above any test function in VS Code to start debugging immediately.
+</Info>
+
+### Custom VS Code Test Configuration
+
+For more control (e.g., environment variables), create a launch configuration:
+
+```json .vscode/launch.json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run selected test",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${fileDirname}",
+            "args": [
+                "-test.run",
+                "^${selectedText}$"
+            ],
+            "env": {
+                "TF_ACC": "1"
+            }
+        }
+    ]
+}
+```
+
+Usage:
+1. Highlight the test function name
+2. Start the debugger
+3. The highlighted test will run with your specified environment
+
+### GoLand Test Debugging
+
+GoLand has [built-in debugging features](https://www.jetbrains.com/help/go/debugging-code.html). Right-click any test and select "Debug".
+
+## Debugging Terraform Operations
+
+You can debug Terraform commands that use real configurations in two ways:
+
+### Method 1: Debug with dlv CLI
+
+This workflow uses the command-line Delve debugger.
+
+#### Step 1: Build and Start Debug Server
+
+Compile with debug flags and start a headless debug server:
+
+```bash
+# Build with debug flags
+go install -gcflags="all=-N -l"
+
+# Start debug server (from your Terraform project directory)
+dlv exec $HOME/go/bin/terraform --headless --listen :2345 --log -- apply
+```
+
+<Note>
+  Replace `apply` with whatever Terraform command you want to debug (e.g., `plan`, `init`, etc.).
+</Note>
+
+#### Step 2a: Connect via CLI
+
+Connect to the debug server using Delve CLI:
+
+```bash
+dlv connect :2345
+```
+
+You can now use Delve commands:
+- `break` - Set breakpoints
+- `continue` - Continue execution
+- `next` - Step to next line
+- `step` - Step into function
+- `print` - Print variables
+
+#### Step 2b: Connect from VS Code
+
+Alternatively, connect using VS Code:
+
+```json .vscode/launch.json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Connect to dlv server",
+            "type": "go",
+            "request": "attach",
+            "mode": "remote",
+            "remotePath": "${workspaceFolder}",
+            "port": 2345,
+            "host": "127.0.0.1"
+        }
+    ]
+}
+```
+
+Then select "Connect to dlv server" from the Run and Debug view.
+
+### Method 2: Launch from VS Code Debugger
+
+This workflow launches Terraform directly from VS Code.
+
+#### Create Launch Configuration
+
+```json .vscode/launch.json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Terraform in debug mode",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}",
+            "args": [
+                "-chdir=/absolute/path/to/terraform/project",
+                "plan"
+            ],
+            "env": {
+                "TF_LOG": "DEBUG"
+            }
+        }
+    ]
+}
+```
+
+<Warning>
+  Replace `/absolute/path/to/terraform/project` with the actual path to your Terraform project directory.
+</Warning>
+
+#### Configuration Options
+
+- **`args`**: Set the Terraform command to debug (e.g., `["plan"]`, `["apply"]`)
+- **`-chdir`**: Specify the working directory containing your Terraform configuration
+- **`cwd`**: Alternatively, use `cwd` instead of `-chdir` to set the working directory
+- **`env`**: Set environment variables like `TF_LOG`, `TF_ACC`, etc.
+- **`envFile`**: Load environment variables from a file
+
+#### Run the Configuration
+
+1. Navigate to the Run and Debug view (Activity Bar)
+2. Select "Run Terraform in debug mode"
+3. Press the green arrow to start debugging
+
+<Info>
+  This is equivalent to running a Terraform command in the project directory. Plan files and state will be created as they would in normal execution.
+</Info>
+
+## Setting Breakpoints
+
+### In VS Code
+
+Click in the gutter to the left of a line number to set a breakpoint:
+
+- **Red dot**: Breakpoint set
+- **Gray dot**: Breakpoint disabled
+
+Or use conditional breakpoints:
+1. Right-click in the gutter
+2. Select "Add Conditional Breakpoint"
+3. Enter a Go expression (e.g., `name == "example"`)
+
+### In Delve CLI
+
+```bash
+# Break at function
+break main.main
+
+# Break at file:line
+break /path/to/file.go:123
+
+# Conditional breakpoint
+break main.go:45 count > 100
+
+# List breakpoints
+breakpoints
+
+# Clear breakpoint
+clear 1
+```
+
+## Debugging Workflows
+
+### Debug a Specific Bug
+
+1. Create a minimal Terraform configuration that reproduces the bug
+2. Set breakpoints in the suspected code
+3. Launch Terraform in debug mode
+4. Step through execution to find the issue
+
+### Debug a Test Failure
+
+1. Run the test normally to confirm it fails
+2. Set breakpoints in the test or implementation
+3. Debug the test in VS Code or GoLand
+4. Examine variables and execution flow
+
+### Debug Provider Issues
+
+1. Set breakpoints in the provider plugin code
+2. Use the VS Code launch configuration with `TF_LOG=DEBUG`
+3. Examine the plugin protocol communication
+
+## Debugging Environment Variables
+
+### Terraform Logging
+
+Control Terraform's log output:
+
+```bash
+# Enable debug logging
+export TF_LOG=DEBUG
+
+# Enable trace logging (most verbose)
+export TF_LOG=TRACE
+
+# Log specific component
+export TF_LOG=DEBUG
+export TF_LOG_CORE=TRACE
+export TF_LOG_PROVIDER=DEBUG
+
+# Write logs to file
+export TF_LOG_PATH=./terraform.log
+```
+
+### Plugin Development
+
+```bash
+# Enable plugin debugging
+export TF_LOG=DEBUG
+export TF_LOG_PROVIDER=TRACE
+```
+
+## Debugging Tools
+
+### Delve Commands
+
+Common Delve debugging commands:
+
+```bash
+continue (c)      # Continue execution
+next (n)          # Step over
+step (s)          # Step into
+stepout (so)      # Step out of current function
+print (p)         # Print variable value
+args              # Print function arguments
+locals            # Print local variables
+whatis            # Print type of expression
+stack (bt)        # Print stack trace
+up/down           # Move up/down stack frame
+restart (r)       # Restart debugging session
+exit (quit)       # Exit debugger
+```
+
+### Useful Debugging Expressions
+
+```bash
+# Print variable
+p variableName
+
+# Print with formatting
+p fmt.Sprintf("%#v", variable)
+
+# Call functions
+call myFunction(arg1, arg2)
+
+# Examine struct
+p myStruct
+
+# Check pointer
+print *pointerVar
+```
+
+## Common Debugging Scenarios
+
+### Panic or Crash
+
+1. Enable panic recovery in debugger
+2. Set breakpoint at suspected panic location
+3. Examine stack trace when panic occurs
+4. Check nil pointers and array bounds
+
+### Infinite Loop
+
+1. Pause execution in debugger
+2. Examine current location
+3. Check loop variables and conditions
+4. Set conditional breakpoint on loop iteration count
+
+### Unexpected Behavior
+
+1. Set breakpoints at decision points
+2. Examine variable values at each step
+3. Compare expected vs actual values
+4. Trace execution path
+
+## Performance Debugging
+
+### CPU Profiling
+
+```bash
+# Run with CPU profiling
+go test -cpuprofile=cpu.prof -bench=.
+
+# Analyze profile
+go tool pprof cpu.prof
+```
+
+### Memory Profiling
+
+```bash
+# Run with memory profiling
+go test -memprofile=mem.prof -bench=.
+
+# Analyze profile
+go tool pprof mem.prof
+```
+
+### Trace Execution
+
+```bash
+# Generate execution trace
+go test -trace=trace.out
+
+# View trace
+go tool trace trace.out
+```
+
+## Tips and Best Practices
+
+<Tip>
+  **Start with tests**: Debugging automated tests is usually faster than debugging full Terraform operations.
+</Tip>
+
+<Tip>
+  **Use logging**: Add strategic log statements to understand execution flow before resorting to interactive debugging.
+</Tip>
+
+<Tip>
+  **Minimize reproduction**: Create the smallest possible configuration that reproduces the issue.
+</Tip>
+
+<Tip>
+  **Check git history**: Use `git blame` to find when code was changed and read related PRs for context.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask" href="/contributing/testing">
+    Learn about Terraform's testing requirements
+  </Card>
+  <Card title="Code Style" icon="code" href="/contributing/code-style">
+    Follow code formatting and style guidelines
+  </Card>
+  <Card title="Building" icon="hammer" href="/contributing/building">
+    Build Terraform with debugging flags
+  </Card>
+</CardGroup>
